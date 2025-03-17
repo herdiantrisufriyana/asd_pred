@@ -1,0 +1,49 @@
+colname,class,old_unit,new_unit
+id,character,case ID,digit
+maternal_age,numeric,媽媽年齡,year
+mother_education_below_university,factor, 無,0-no
+mother_education_below_university,factor,有,1-yes
+low_family_ses,factor, 無,0-no
+low_family_ses,factor,有,1-yes
+family_social_risk_index,factor,no family social risk,0-no family social risk
+family_social_risk_index,factor,only one family social risk,1-one family social risk
+family_social_risk_index,factor,family social risk≥2,2-≥2 family social risk
+ga,numeric,出生週數(weeks),week
+male,factor,Male,1-yes
+male,factor, female,0-no
+bbw,numeric,出生體重(g),g
+sga,factor,Small for gestational age 無,0-no
+sga,factor,有,1-yes
+surfactant,factor,None 無用,0-no
+surfactant,factor,有用,1-yes
+supplemental_o2_duration,numeric,住院期間氧氣使用天數,day
+imv_duration,numeric,住院期間侵襲型呼吸器的使用天數,day
+pda_ligation,factor,無,0-no
+pda_ligation,factor, PDA ligation,1-yes
+sepsis,factor,無,0-no
+sepsis,factor,sepsis,1-yes
+severe_brain_injury,factor,無,0-no
+severe_brain_injury,factor,Severe brain injury,1-yes
+severe_nec,factor,無,0-no
+severe_nec,factor,Severe NEC,1-yes
+surgery_of_the_abdomen,factor,無,0-no
+surgery_of_the_abdomen,factor,Surgery of the abdomen,1-yes
+bpd,factor,無,0-no
+bpd,factor,BPD,1-yes
+severe_rop,factor,無,0-no
+severe_rop,factor,Severe ROP,1-yes
+delta_bw,numeric,discharge BW z score minus birth BW z score,delta Z-score
+delta_hc,numeric,discharge HC z score minus birth HC z score,delta Z-score
+hospital_stay,numeric,住院天數(天),day
+m24_cognitive_composite_score,numeric,24 m/o Cognitive Composite Score,score
+m24_language_composite_score,numeric,24 m/o Language Composite Score,score
+m24_motor_composite_score,numeric,24 m/o Motor Composite Score,score
+m24_cong_ss,numeric,24 m/o Cognitive scores,score
+m24_rc_ss,numeric,24 m/o Receptive language scores,score
+m24_ec_ss,numeric,24 m/o Expressive language scores,score
+m24_fm_ss,numeric,24 m/o Fine motor scores,score
+m24_gm_ss,numeric,24 m/o Gross motor scores,score
+m_chat_r,numeric,M chat R score,score
+m_chat_f,numeric,M chat F score,score
+asd,factor,無,0-no
+asd,factor,ASD,1-yes

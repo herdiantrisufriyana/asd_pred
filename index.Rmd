@@ -1,0 +1,3562 @@
+---
+title: "Early prediction of autism spectrum disorder (ASD) among preterm infants"
+author: "Herdiantri Sufriyana, Li-Wen Chen, Chien-Jung Ho, Ting-Chun Yeh, Chao-Ching
+  Huang, Emily Chia-Yu Su"
+date: "2025-03-13"
+output: html_document
+---
+
+# Programming environment
+
+```{r Set random seed, include=FALSE, paged.print=FALSE}
+seed <- 2025-03-13
+```
+
+```{r Load R packages, include=FALSE}
+library(tidyverse)
+library(knitr)
+library(kableExtra)
+library(ggpubr)
+library(readxl)
+library(broom)
+library(MASS)
+select <- dplyr::select
+library(igraph)
+library(ggnetwork)
+library(brms)
+library(broom.mixed)
+library(pbapply)
+library(mice)
+filter <- dplyr::filter
+cbind <- base::cbind
+rbind <- base::rbind
+tidy <- broom.mixed::tidy
+```
+
+```{r Load custom functions, include=FALSE}
+lapply(list.files("R/", pattern = "-function.R", full.names = TRUE), source)
+```
+
+```{r Set theme, include=FALSE}
+dslabs::ds_theme_set()
+kable_format <- "html"
+figure_n <- 0
+table_n <- 0
+```
+
+```{r Session info, include=FALSE}
+sessionInfo()
+```
+
+# Load raw data
+
+```{r Load raw metadata, include=FALSE}
+raw_metadata <-
+  read_xlsx(
+    "inst/extdata/M chat/201311_201912_GA22-31_autism_470_DR_Su_20250306.xlsx"
+    , sheet = 2
+  )
+```
+
+```{r Load raw data, include=FALSE}
+raw_data <-
+  read_xlsx(
+    "inst/extdata/M chat/201311_201912_GA22-31_autism_470_DR_Su_20250306.xlsx"
+    , sheet = 1
+  )
+```
+
+# Data preprocessing
+
+## Data cleaning
+
+```{r Raw metadata column names - old, include=FALSE}
+raw_metadata_old_colname <-
+  data.frame(old_colname = colnames(raw_metadata), new_colname = NA)
+```
+
+```{r Raw metadata column names - write, eval=FALSE, include=FALSE}
+raw_metadata_old_colname |>
+  write_csv("inst/extdata/raw_metadata_old_colname.csv")
+```
+
+```{r Raw metadata column names - new, include=FALSE}
+raw_metadata_new_colname <-
+  read_csv("inst/extdata/raw_metadata_new_colname.csv", show_col_types = FALSE)
+```
+
+```{r Raw metadata column names - update, include=FALSE}
+raw_metadata_update <-
+  raw_metadata |>
+  `colnames<-`(
+    data.frame(old_colname = colnames(raw_metadata)) |>
+      left_join(raw_metadata_new_colname, by = join_by(old_colname)) |>
+      pull(new_colname)
+  )
+```
+
+```{r Processing of raw metadata, include=FALSE}
+processed_metadata <-
+  raw_metadata_update |>
+  mutate(
+    class =
+      case_when(
+        colname == "ID" ~ "character"
+        , class == "continuous variables" ~ "numeric"
+        , class == "categorical variable" ~ "factor"
+      )
+  ) |>
+  fill(everything(), .direction = "down") |>
+  separate_rows(unit, sep = ";") |>
+  filter(class != "factor" | (class == "factor" & str_detect(unit, "\\="))) |>
+  mutate(unit = ifelse(!str_detect(unit, "\\="), paste0(unit, "="), unit)) |>
+  separate(unit, c("unit", "value"), sep = "\\s*\\=\\s*") |>
+  mutate(
+    unit2 = ifelse(colname == "Family_Social_Risk_Index", value, unit)
+    , value2 = ifelse(colname == "Family_Social_Risk_Index", unit, value)
+    , unit = ifelse(colname == "Family_Social_Risk_Index", unit2, unit)
+    , value = ifelse(colname == "Family_Social_Risk_Index", value2, value)
+  ) |>
+  select(-unit2, -value2) |>
+  mutate(
+    value = sapply(value, \(x) str_extract_all(x, "[:digit:]+")[[1]])
+    , value = sapply(value, \(x) as.numeric(ifelse(length(x) == 0, NA, x)))
+  ) |>
+  rename(old_colname = colname) |>
+  mutate(colname = str_to_lower(old_colname)) |>
+  mutate(colname = str_replace_all(colname, "^24m", "m24")) |>
+  select(colname, everything())
+```
+
+```{r Processed metadata unit - old, include=FALSE}
+processed_metadata_unit_old <-
+  processed_metadata |>
+  select(colname, class, old_unit  = unit) |>
+  mutate(new_unit = NA)
+```
+
+```{r Processed metadata unit - write, eval=FALSE, include=FALSE}
+processed_metadata_unit_old |>
+  write_csv("inst/extdata/processed_metadata_unit_old.csv")
+```
+
+```{r Processed metadata unit - new, include=FALSE}
+processed_metadata_unit_new <-
+  read_csv(
+    "inst/extdata/processed_metadata_unit_new.csv", show_col_types = FALSE
+  ) |>
+  mutate(old_unit = trimws(old_unit))
+```
+
+```{r Processed metadata unit - update, include=FALSE}
+cleaned_metadata <-
+  processed_metadata |>
+  rename(old_unit = unit) |>
+  mutate(old_unit = trimws(old_unit)) |>
+  left_join(
+    processed_metadata_unit_new, by = join_by(colname, class, old_unit)
+  ) |>
+  mutate(old_unit = new_unit) |>
+  rename(unit = old_unit) |>
+  select(-new_unit)
+```
+
+```{r Modify column names and recode values of raw data, include=FALSE}
+cleaned_data <-
+  raw_data |>
+  `colnames<-`(
+    data.frame(old_colname = colnames(raw_data)) |>
+      left_join(cleaned_metadata, by = join_by(old_colname)) |>
+      pull(colname) |>
+      unique()
+  ) |>
+  mutate(seq = seq(n())) |>
+  gather(colname, value, -seq) |>
+  left_join(
+    cleaned_metadata |>
+      mutate(unit = ifelse(class == "factor", unit, NA))
+    , by = join_by(colname, value)
+  ) |>
+  mutate(unit = ifelse(is.na(unit), value, unit)) |>
+  select(seq, colname, new_value = unit) |>
+  mutate_at("colname", \(x) factor(x, unique(x))) |>
+  spread(colname, new_value) |>
+  arrange(seq) |>
+  select(-seq) |>
+  mutate_at(
+    unique(filter(cleaned_metadata, class == "character")$colname)
+    , as.character
+  ) |>
+  mutate_at(
+    unique(filter(cleaned_metadata, class == "numeric")$colname)
+    , as.numeric
+  ) |>
+  mutate_at(
+    unique(filter(cleaned_metadata, class == "factor")$colname)
+    , as.factor
+  )
+```
+
+## Data partition
+
+```{r Split data for each GA (week), include=FALSE}
+# Determine whole set
+whole_set <-
+  cleaned_data |>
+  select(id, ga) |>
+  unique()
+
+# Split data by GA (week)
+whole_id <-
+  whole_set |>
+  pull(ga) |>
+  unique() |>
+  sort() |>
+  lapply(\(x) filter(whole_set, ga == x)$id)
+
+
+# GA-wise partitioning
+train_id <- list()
+val_id <- list()
+test_id <- list()
+
+for(i in seq(length(whole_id))){
+  set.seed(seed)
+  
+  test_id[[i]] <-
+    whole_id[[i]] |>
+    sample(size = round(0.2 * length(whole_id[[i]])), replace = FALSE)
+  
+  train_id[[i]] <- setdiff(whole_id[[i]], test_id[[i]])
+  
+  set.seed(seed)
+  
+  val_id[[i]] <-
+    train_id[[i]] |>
+    sample(size = round(0.2 * length(train_id[[i]])), replace = FALSE)
+  
+  train_id[[i]] <- setdiff(train_id[[i]], val_id[[i]])
+}
+
+whole_id <- reduce(whole_id, c)
+train_id <- reduce(train_id, c)
+val_id <- reduce(val_id, c)
+test_id <- reduce(test_id, c)
+```
+
+```{r GA per partition - create, include=FALSE}
+ga_dist_per_partition <-
+  whole_set |>
+  mutate(
+    set =
+      case_when(
+        id %in% train_id ~ "Training"
+        , id %in% val_id ~ "Validation"
+        , id %in% test_id ~ "Test"
+      )
+  ) |>
+  mutate(
+    set =
+      set |>
+      factor(c("Training", "Validation", "Test", "Independent test"))
+  ) |>
+  ggplot(aes(ga)) +
+  geom_histogram(binwidth = 1, color = "white") +
+  facet_grid(set ~ ., scales = "free_y") +
+  scale_x_continuous(breaks = seq(22, 31)) +
+  theme(strip.text.y = element_text(angle = 0))
+```
+
+```{r GA per partition - show, echo=FALSE, fig.height=5, fig.width=7}
+ga_dist_per_partition
+```
+
+```{r GA per partition - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "GA (week) distribution for each partition and independent test. GA, "
+    , "gestational week."
+  )
+)
+```
+
+```{r Finalize inference data, include=FALSE}
+infer_data <-
+  cleaned_data |>
+  filter(id %in% train_id)
+```
+
+## Numerical data transformation
+
+```{r Separate categorical and numerical variables, include=FALSE}
+cat_data <-
+  infer_data |>
+  select_if(!sapply(infer_data, is.numeric))
+
+num_data <-
+  infer_data |>
+  select_if(sapply(infer_data, is.numeric))
+```
+
+```{r QQ plots of numeric vars - create, include=FALSE}
+normal_qq <-
+  num_data |>
+  imap(~ qq_plot_outlier(.x, .y))
+
+normal_qq <-
+  normal_qq |>
+  length() |>
+  seq() |>
+  split(LETTERS[1:3]) |>
+  data.frame() |>
+  pmap(
+    \(A, B, C)
+    ggarrange(normal_qq[[A]], normal_qq[[B]], normal_qq[[C]], ncol = 3)
+  )
+
+normal_qq <-
+  ggarrange(
+    normal_qq[[1]], normal_qq[[2]], normal_qq[[3]]
+    , normal_qq[[4]], normal_qq[[5]], normal_qq[[6]]
+    , ncol = 1, nrow = 6
+  )
+```
+
+```{r QQ plots of numeric vars - show, echo=FALSE, fig.height=30, fig.width=18}
+normal_qq
+```
+
+```{r QQ plots of numeric vars - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "QQ plot of numerical variables. QQ, quantile-to-quantile."
+  )
+)
+```
+
+```{r Determine normality by QQ plot - variable, include=FALSE}
+var_num_normal_qq_empty <-
+  data.frame(variable = colnames(num_data), qq = NA)
+```
+
+```{r Determine normality by QQ plot - write, eval=FALSE, include=FALSE}
+var_num_normal_qq_empty |>
+  write_csv("inst/extdata/var_num_normal_qq_empty.csv")
+```
+
+```{r Determine normality by QQ plot - filled, include=FALSE}
+var_num_normal_qq_filled <-
+  read_csv("inst/extdata/var_num_normal_qq_filled.csv", show_col_types = FALSE)
+```
+
+```{r Determine normality by QQ plot - select, include=FALSE}
+var_num_normal_qq <- filter(var_num_normal_qq_filled, qq == "yes")$variable
+```
+
+```{r Numerical variables with normal distribution by QQ plots, echo=FALSE}
+c("Numerical variables with normal distribution by QQ plots: ") |>
+  paste0(paste0(var_num_normal_qq, collapse=', ')) |>
+  cat()
+```
+
+```{r Normality test of numerical variables, include=FALSE}
+normal_test <-
+  num_data |>
+  select_if(!names(num_data) %in% var_num_normal_qq) |>
+  lapply(
+    \(x)
+    suppressWarnings(
+        ks.test(
+          x
+          , y = "pnorm"
+          , mean = mean(x, na.rm = TRUE)
+          , sd = sd(x, na.rm = TRUE)
+        )
+      )
+  ) |>
+  lapply(tidy) |>
+  imap(~ mutate(.x, variable = .y)) |>
+  lapply(select, variable, everything()) |>
+  reduce(rbind)
+```
+
+```{r Normal test results - create, include=FALSE}
+normal_test_results <-
+  normal_test |>
+  select(-method) |>
+  mutate_at("statistic", round, 3) |>
+  arrange(p.value) |>
+  mutate(variable = paste0(variable, ifelse(p.value <= 0.05, "*", ""))) |>
+  mutate(p.value = ifelse(p.value < 0.001, "<0.001", round(p.value, 3)))
+```
+
+```{r Normal test results - show, echo=FALSE}
+table_n <- table_n + 1
+
+normal_test_results |>
+  kable(
+    caption = paste0("Table ", table_n, ". Normality test.")
+    , format = kable_format
+  ) |>
+  footnote("*, p-value <=0.05, Shapiro-Wilk normality test.") |>
+  kable_classic() |>
+  column_spec(seq(ncol(normal_test_results)), extra_css = "vertical-align:top;")
+```
+
+```{r Determine num variables that are not normally distributed, include=FALSE}
+var_num_non_normal <-
+  normal_test |>
+  filter(p.value <= 0.05) |>
+  pull(variable)
+```
+
+```{r Numerical variables that are not normally distributed, echo=FALSE}
+c("Numerical variables that are not normally distributed: ") |>
+  paste0(paste0(var_num_non_normal, collapse=', ')) |>
+  cat()
+```
+
+```{r Non-normal mumerical variables with 0, include=FALSE}
+var_num_non_normal_with_zero <-
+  num_data |>
+  select_at(var_num_non_normal) |>
+  lapply(\(x) x[!duplicated(x)]) |>
+  lapply(\(x) x[!is.na(x)]) |>
+  sapply(\(x) any(x==0)) |>
+  which() |>
+  names()
+```
+
+```{r Non-normal mumerical variables with <0, include=FALSE}
+var_num_non_normal_with_neg <-
+  num_data |>
+  select_at(var_num_non_normal) |>
+  lapply(\(x) x[!duplicated(x)]) |>
+  lapply(\(x) x[!is.na(x)]) |>
+  sapply(\(x) any(x<0)) |>
+  which() |>
+  names()
+```
+
+```{r Non-normal mumerical variables infinited exp, include=FALSE}
+var_num_non_normal_with_inf_exp <-
+  num_data |>
+  select_at(var_num_non_normal) |>
+  lapply(\(x) x[!duplicated(x)]) |>
+  lapply(\(x) x[!is.na(x)]) |>
+  sapply(\(x) any(is.infinite(exp(x)))) |>
+  which() |>
+  names()
+```
+
+```{r Determine choices for a transformation technique, include=FALSE}
+trans_choice <-
+  data.frame(variable = var_num_non_normal) |>
+  mutate(
+    log =
+      ifelse(
+        variable %in% var_num_non_normal_with_zero
+        | variable %in% var_num_non_normal_with_neg
+        , 0, 1
+      )
+    , sqrt = ifelse(variable %in% var_num_non_normal_with_neg, 0, 1)
+    , inv =
+      ifelse(
+        variable%in%var_num_non_normal_with_zero
+        | variable%in%var_num_non_normal_with_neg
+        , 0, 1
+      )
+    , log2 =
+      ifelse(
+        variable%in%var_num_non_normal_with_zero
+        | variable%in%var_num_non_normal_with_neg
+        , 0, 1
+      )
+    , exp =
+      ifelse(
+        variable%in%var_num_non_normal_with_inf_exp
+        , 0, 1
+      )
+    , asinh = 1
+    , bct =
+      ifelse(
+        variable%in%var_num_non_normal_with_zero
+        | variable%in%var_num_non_normal_with_neg
+        , 0, 1
+      )
+  )
+```
+
+```{r Choices for a transformation technique, echo=FALSE}
+c("Choices for a transformation technique: ") |>
+  paste0(
+    trans_choice |>
+      colnames() |>
+      setdiff("variable") |>
+      paste0(collapse=', ')
+  ) |>
+  cat()
+```
+
+```{r Simple transformations, include=FALSE}
+simple_trans <-
+  trans_choice |>
+  gather(func, do, -variable) |>
+  filter(do == 1) |>
+  select(-do) |>
+  filter(!func %in% c("bct"))
+
+simple_trans <-
+  simple_trans |>
+  pull(func) |>
+  unique() |>
+  lapply(
+    \(x)
+    simple_trans |>
+      filter(func == x) |>
+      pull(variable) |>
+      lapply(
+        \(y)
+        list(
+            log = log
+            , sqrt = sqrt
+            , inv = \(x) 1/x
+            , log2 = log2
+            , exp = exp
+            , asinh = asinh
+          )[[x]](num_data[[y]]) |>
+          as.data.frame() |>
+          `colnames<-`(y)
+      ) |>
+       `names<-`(
+         simple_trans |>
+          filter(func == x) |>
+          pull(variable)
+       )
+  ) |>
+  `names<-`(unique(simple_trans$func))
+```
+
+```{r Box-Cox transformation (BCT), include=FALSE}
+bc_trans <-
+  trans_choice |>
+  gather(func, do, -variable) |>
+  filter(do == 1) |>
+  select(-do) |>
+  filter(func %in% c("bct")) |>
+  pull(variable)
+
+bc_trans <-
+  bc_trans |>
+  `names<-`(as.character(bc_trans)) |>
+  as.list()
+
+for(i in names(bc_trans)){
+  bc_trans[[i]] <-
+    boxcox(
+      lm(num_data[[i]] ~ 1)
+      , lambda = seq(-2, 2, by = 0.1)
+      , plot = F
+    ) |>
+    c(list(value = num_data[[i]]))
+}
+
+rm(i)
+
+bc_trans <-
+  bc_trans |>
+  lapply(
+    \(x)
+    list(
+      rep(NA, length(x$value))
+       ,(x$value^(x$x[which.max(x$y)]) - 1) / x$x[which.max(x$y)]
+    )[[ifelse(abs(x$x[which.max(x$y)]) < 1e-10, 1, 2)
+    ]]
+  ) |>
+  imap(
+    ~ data.frame(trans=.x) |>
+      `colnames<-`(.y)
+  )
+
+bc_trans <-
+  bc_trans[sapply(bc_trans, \(x) !all(is.na(x[[1]])))]
+```
+
+```{r Normality test of transformed numerical variables, include=FALSE}
+normal_test_after_trans <-
+  simple_trans |>
+  c(list(bct = bc_trans)) |>
+  imap(
+    ~ .x |>
+      lapply(
+        \(x)
+        suppressWarnings(
+            ks.test(
+              x[[1]]
+              , y = "pnorm"
+              , mean = mean(x[[1]], na.rm = TRUE)
+              , sd = sd(x[[1]], na.rm = TRUE)
+            )
+          )
+      ) |>
+      lapply(tidy) |>
+      imap(~ mutate(.x, variable = .y)) |>
+      reduce(rbind) |>
+      mutate(func = .y)
+  ) |>
+  reduce(rbind) |>
+  select(func, variable, p.value) |>
+  mutate_at("func", \(x) factor(x, unique(x))) |>
+  group_by(variable) |>
+  mutate(best_trans = func[which.max(p.value)]) |>
+  ungroup() |>
+  spread(func, p.value) |>
+  right_join(
+    data.frame(variable = var_num_non_normal)
+    , by = join_by(variable)
+  ) |>
+  mutate(
+    p.value=
+      ifelse(
+        best_trans == "log"
+        , log
+        , ifelse(
+          best_trans == "sqrt"
+          , sqrt
+          , ifelse(
+            best_trans == "inv"
+            , inv
+            , ifelse(
+              best_trans == "log2"
+              , log2
+              , ifelse(
+                best_trans == "exp"
+                , exp
+                , ifelse(
+                  best_trans == "asinh"
+                  , asinh
+                  , bct
+                )
+              )
+            )
+          )
+        )
+      )
+  ) |>
+  select(variable, best_trans, p.value, everything())
+```
+
+```{r Normal test results after trans - create, include=FALSE}
+normal_test_after_trans_results <-
+  normal_test_after_trans |>
+  mutate(variable = paste0(variable, ifelse(p.value <= 0.05, "*", ""))) |>
+  arrange(p.value) |>
+  mutate_if(is.numeric, \(x) ifelse(x < 0.001, "<0.001", round(x, 3))) |>
+  mutate_if(is.numeric, as.character)
+```
+
+```{r Normal test results after trans - show, echo=FALSE}
+table_n <- table_n + 1
+
+normal_test_after_trans_results |>
+  kable(
+    caption =
+      paste0("Table ", table_n, ". Normality test after transformation.")
+    , format = kable_format
+  ) |>
+  footnote("*, p-value <=0.05, Shapiro-Wilk normality test.") |>
+  kable_classic() |>
+  column_spec(
+    seq(ncol(normal_test_after_trans_results))
+    , extra_css = "vertical-align:top;"
+  )
+```
+
+```{r Determine num vars that are not normal after transformed, include=FALSE}
+var_num_non_normal_after_trans <-
+  normal_test_after_trans |>
+  filter(p.value <= 0.05) |>
+  pull(variable)
+```
+
+```{r Numerical variables that are not normal after transformation, echo=FALSE}
+c("Numerical variables that are not normal after transformation: ") |>
+  paste0(
+    var_num_non_normal_after_trans |>
+    paste0(collapse = ", ")
+  ) |>
+  cat()
+```
+
+```{r Finalize transformed data, include=FALSE}
+transformed_data <-
+  num_data |>
+  cbind(cat_data) |>
+  select_at(colnames(infer_data))
+```
+
+# Outlier analysis
+
+```{r Determine exception for outlier analysis, include=FALSE}
+trans_ps_num_exception <- var_num_normal_qq_empty$variable
+```
+
+```{r Numerical var after transformation, include=FALSE}
+trans_ps_num_data <-
+  transformed_data |>
+  select_if(sapply(transformed_data, is.numeric))
+
+trans_ps_num_data <-
+  trans_ps_num_data |>
+  select_at(setdiff(colnames(trans_ps_num_data), trans_ps_num_exception))
+```
+
+```{r Relevant numerical var after transformation, echo=FALSE}
+c("Relevant numerical var after transformation: ") |>
+  paste0(
+    trans_ps_num_data |>
+      colnames() |>
+      paste0(collapse = ", ")
+  ) |>
+  cat()
+```
+
+# Correlation matrix
+
+```{r Identify and create missingness variables, include=FALSE}
+ms_added_data0 <-
+  transformed_data |>
+  select(-id) |>
+  sapply(\(x) any(is.na(x))) |>
+  which() |>
+  names() |>
+  lapply(
+    \(x)
+    transformed_data |>
+      select_at(x) |>
+      `colnames<-`("value") |>
+      mutate(value = ifelse(is.na(value), "yes", "no")) |>
+      `colnames<-`(paste0("ms_", x))
+  ) |>
+  reduce(cbind) |>
+  cbind(transformed_data) |>
+  select(id, everything())
+
+ms_added_data <-
+  ms_added_data0 |>
+  select(-id)
+```
+
+```{r Check categorical variables with a category of 1 value, include=FALSE}
+var_cat_val1 <-
+  ms_added_data |>
+  select_if(!sapply(ms_added_data, is.numeric)) |>
+  mutate_all(as.character) |>
+  gather(variable, value) |>
+  group_by_all() |>
+  summarize(n = n(), .groups = "drop") |>
+  filter(n <= 1) |>
+  pull(variable) |>
+  unique()
+```
+
+```{r Categorical variables with a category of 1 value, echo=FALSE}
+c("Categorical variables with a category of 1 value: ") |>
+  paste0(paste0(var_cat_val1, collapse=', ')) |>
+  cat()
+```
+
+```{r Pair-wise distribution of categorical variables, include=FALSE}
+pairwise_cat_sum <-
+  ms_added_data |>
+  select_if(
+    !sapply(ms_added_data, is.numeric)
+    & !colnames(ms_added_data) %in% var_cat_val1
+  ) |>
+  colnames() |>
+  combn(2) |>
+  as.data.frame() |>
+  lapply(
+    \(x)
+    ms_added_data |>
+      select_at(x) |>
+      group_by_all() |>
+      summarize(n = n(), .groups = "drop") |>
+      select_at(c(x, "n")) |>
+      `colnames<-`(c("V1_value", "V2_value", "n")) |>
+      mutate(V1 = x[1], V2 = x[2])
+  ) |>
+  lapply(
+    \(x)
+    expand.grid(
+      V1_value = unique(x$V1_value)
+      , V2_value = unique(x$V2_value)
+      ) |>
+      mutate_all(as.character) |>
+      left_join(x, by = join_by(V1_value, V2_value)) |>
+      mutate_at("n", \(x) ifelse(is.na(x), 0, x)) |>
+      fill(V1, V2)
+  ) |>
+  reduce(rbind) |>
+  select(V1, V1_value, V2, V2_value, everything())
+```
+
+```{r Pair-wise perfect separation, include=FALSE}
+pairwise_cat_sum_ps <-
+  pairwise_cat_sum |>
+  group_by(V1, V2) |>
+  summarize(ps = any(n == 0), .groups = "drop")
+```
+
+```{r Categorical vars with pair-wise perfect sep - create, include=FALSE}
+var_cat_ps <-
+  pairwise_cat_sum |>
+  inner_join(
+    pairwise_cat_sum_ps |>
+      filter(ps) |>
+      select(-ps)
+    , by = join_by(V1, V2)
+  ) |>
+  filter(n == 0)
+```
+
+```{r Categorical vars with pair-wise perfect sep - show, echo=FALSE}
+table_n <- table_n + 1
+
+var_cat_ps |>
+  kable(
+    caption =
+      paste0(
+        "Table ", table_n, ". "
+        , "Categorical variables with pair-wise perfect separation."
+      )
+    , format = kable_format
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(var_cat_ps)), extra_css = "vertical-align:top;")
+```
+
+```{r Variable pairs for correlation tests, include=FALSE}
+correlation_pair <-
+  ms_added_data |>
+  colnames() |>
+  setdiff(var_cat_val1) |>
+  combn(2) |>
+  as.data.frame() |>
+  t() |>
+  as.data.frame() |>
+  `rownames<-`(NULL) |>
+  filter(str_remove_all(V1, "^ms_") != str_remove_all(V2, "^ms_")) |>
+  mutate(unit = "id")
+```
+
+```{r Conduct correlation tests per pair with PS, eval=FALSE, include=FALSE}
+correlation_matrix_ps0 <-
+  correlation_pair |>
+  filter(
+    paste0(V1, V2)
+    %in% c(
+      pairwise_cat_sum_ps |>
+        filter(ps) |>
+        unite(V1V2, V1, V2, sep = "") |>
+        pull(V1V2)
+    )
+  )
+
+correlation_matrix_ps <-
+  correlation_matrix_ps0 |>
+  pmap(
+    \(V1, V2, unit)
+    list(
+      data =
+        ms_added_data0[, c(V1, V2, str_split(unit, "\\|")[[1]])] |>
+        unique()
+      , V1 = V1
+      , V2 = V2
+    )
+  )
+
+if (!dir.exists("data/")){
+  dir.create("data/")
+}
+
+if (!dir.exists("data/correlation_matrix_ps")){
+  dir.create("data/correlation_matrix_ps")
+}
+
+# start <- TRUE
+# cl <- min(6, detectCores())
+# source("R/parallel_computing-codes.R")
+
+correlation_matrix_ps[
+  correlation_matrix_ps |>
+    sapply(
+      \(x)
+      !paste0(x$V1, "_", x$V2, ".rds")
+      %in% list.files("data/correlation_matrix_ps")
+    )
+  ] |>
+  pblapply(
+    FUN =
+      \(x, auto_stat_tests = auto_stat_tests, ms_added_data = ms_added_data)
+      suppressWarnings(auto_stat_tests(
+          x$data[[x$V1]]
+          , x$data[[x$V2]]
+          , perfect_separation = TRUE
+        )) |>
+        list() |>
+        `names<-`("obj") |>
+        c(list(V1 = x$V1, V2 = x$V2)) |>
+        saveRDS(paste0("data/correlation_matrix_ps/",x$V1,"_",x$V2,".rds"))
+    , auto_stat_tests = auto_stat_tests
+    , ms_added_data = ms_added_data
+    # ,  cl = cl
+  )
+
+# start <- FALSE
+# source("R/parallel_computing-codes.R")
+
+correlation_matrix_ps <-
+  correlation_matrix_ps0 |>
+  pmap(\(V1, V2, unit) list(V1 = V1, V2 = V2)) |>
+  pblapply(
+    \(x)
+    suppressWarnings(
+      tidy(
+        readRDS(
+          paste0("data/correlation_matrix_ps/",x$V1,"_",x$V2,".rds")
+        )$obj
+      )
+    ) |>
+    filter(!str_detect(term, "\\(Intercept\\)")) |>
+    filter(!(conf.low <= 0 & conf.high >= 0)) |>
+    summarize(n_sig = n()) |>
+    mutate(p.value = ifelse(n_sig > 0, 0, 1)) |>
+    filter(!is.na(p.value)) |>
+    select(p.value) |>
+    mutate(V1 = x$V1, V2 = x$V2)
+  ) |>
+  reduce(rbind)
+
+saveRDS(correlation_matrix_ps, "data/correlation_matrix_ps.rds")
+```
+
+```{r Load pre-conducted correlation tests per pair with PS, include=FALSE}
+correlation_matrix_ps <- readRDS("data/correlation_matrix_ps.rds")
+```
+
+```{r Conduct correlation tests for each pair without PS, include=FALSE}
+correlation_matrix_non_ps <-
+  correlation_pair |>
+  filter(
+    !paste0(V1, V2)
+    %in% c(
+      pairwise_cat_sum_ps |>
+        filter(ps) |>
+        unite(V1V2, V1, V2, sep = "") |>
+        pull(V1V2)
+    )
+  ) |>
+  pmap(
+    \(V1, V2, unit)
+    list(
+      data =
+        ms_added_data0[, c(V1, V2, str_split(unit, "\\|")[[1]])]
+      , V1 = V1
+      , V2 = V2
+    )
+  ) |>
+  lapply(
+    \(x)
+    list(
+      obj =
+        try(
+          suppressWarnings(auto_stat_tests(
+              x$data[[x$V1]]
+              ,x$data[[x$V2]]
+              ,normal_V1 = !x$V1 %in% var_num_non_normal_after_trans
+              ,normal_V2 = !x$V2 %in% var_num_non_normal_after_trans
+            ))
+        )
+      , V1 = x$V1
+      ,V2 = x$V2
+    )
+  )
+
+
+correlation_matrix_non_ps_succeed <-
+  correlation_matrix_non_ps[
+    sapply(
+      correlation_matrix_non_ps
+      , \(x) paste0(class(x$obj), collapse = " ") != "try-error"
+    )
+  ] |>
+  lapply(
+    \(x)
+    x$obj |>
+      tidy() |>
+      filter(!is.na(p.value)) |>
+      select(p.value) |>
+      mutate(
+        V1 = x$V1
+        ,V2 = x$V2
+      )
+  ) |>
+  reduce(rbind)
+
+correlation_matrix_non_ps_failed <-
+  correlation_pair |>
+  filter(
+    !paste0(V1, V2)
+    %in% c(
+      pairwise_cat_sum_ps |>
+        filter(ps) |>
+        unite(V1V2, V1, V2, sep = "") |>
+        pull(V1V2)
+    )
+  ) |>
+  slice(
+    which(
+      sapply(
+        correlation_matrix_non_ps
+        , \(x) paste0(class(x$obj), collapse = " ") == "try-error"
+      )
+    )
+  ) |>
+  mutate(p.value = as.numeric(NA)) |>
+  select(p.value, V1, V2)
+
+correlation_matrix_non_ps <-
+  correlation_matrix_non_ps_succeed |>
+  rbind(correlation_matrix_non_ps_failed)
+```
+
+```{r Conduct correlation tests for each pair, include=FALSE}
+correlation_matrix <-
+  correlation_matrix_ps |>
+  rbind(correlation_matrix_non_ps) |>
+  mutate(p.value = p.adjust(p.value, "BH")) |>
+  rename(cor.p.value = p.value) |>
+  right_join(
+    ms_added_data |>
+      colnames() |>
+      combn(2) |>
+      as.data.frame() |>
+      t() |>
+      as.data.frame() |>
+      `rownames<-`(NULL)
+    , by = join_by(V1, V2)
+  ) |>
+  mutate(
+    V1 = factor(V1, colnames(ms_added_data))
+    ,V2 = factor(V2, levels(V1))
+  ) |>
+  arrange(V1, V2)
+```
+
+```{r Correlation matrix - plot, include=FALSE}
+same_v_corr_df =
+  data.frame(
+    cor.p.value = 0
+    , V1 = colnames(ms_added_data)
+    , V2 = colnames(ms_added_data)
+    , sig = "2 - Significant"
+  )
+
+correlation_matrix_plot <-
+  correlation_matrix |>
+  mutate(
+    V1 = factor(V1, rev(levels(V1)))
+    , sig =
+      ifelse(
+        is.na(cor.p.value)
+        ,ifelse(
+          str_remove_all(V1, "^ms_") == str_remove_all(V2, "^ms_")
+          ,"3 - Not tested†"
+          ,ifelse(
+            V1 %in% var_cat_val1
+            | V2 %in% var_cat_val1
+            ,"4 - Not tested‡"
+            ,"5 - Not tested§"
+          )
+        )
+        ,ifelse(cor.p.value <= 0.05, "2 - Significant", "1 - Not significant")
+      ) |>
+      factor()
+    , sig = factor(sig)
+    , cor.p.value = ifelse(cor.p.value<0.001, "<0.001", round(cor.p.value,3))
+  ) |>
+  rbind(same_v_corr_df) |>
+  ggplot(aes(V1, V2, fill = sig)) +
+  geom_tile(color = "white", na.rm = TRUE) +
+  # geom_text(aes(label = cor.p.value), size = 2.5, na.rm = TRUE) +
+  geom_tile(data = same_v_corr_df, fill = "white") +
+  geom_text(
+    data =
+      same_v_corr_df |>
+      mutate(label = V1)
+    , aes(label = label)
+    , size = 1.5
+    , angle = 45
+    , hjust = 1
+    , nudge_x = 0.15
+    , nudge_y = 0.15
+  ) +
+  coord_flip() +
+  scale_x_discrete(expand = expansion(add = 10)) +
+  scale_y_discrete(expand = expansion(add = 5)) +
+  xlab("") +
+  ylab("") +
+  scale_fill_discrete("Significance*") +
+  theme(
+    panel.grid = element_blank()
+    , panel.border = element_blank()
+    , axis.ticks = element_blank()
+    , axis.text = element_blank()
+  )
+```
+
+```{r Correlation matrix - show, echo=FALSE, fig.height=5, fig.width=7}
+correlation_matrix_plot
+```
+
+```{r Correlation matrix - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Correlation matrix. *, based on p-value (frequentist) or 95% CI "
+    , "(Bayesian); †, pair of variable and its missingness; ‡, at least 1 "
+    , "variable was a categorical variable with a category of 1 value; §, "
+    , "insufficient sample size."
+  )
+)
+```
+
+```{r Pairs with significant correlations - create, include=FALSE}
+correlation_matrix_sig <-
+  correlation_matrix |>
+  filter(cor.p.value <= 0.05) |>
+  select(V1, V2)
+```
+
+```{r Pairs with significant correlations - write, eval=FALSE, include=FALSE}
+correlation_matrix_sig |>
+  write_csv("inst/extdata/correlation.csv")
+```
+
+# Missing value imputation
+
+```{r Imputation predictor matrix, include=FALSE}
+imp_predictor_matrix <-
+  correlation_matrix |>
+  filter(!is.na(cor.p.value)) |>
+  mutate(imp_predictor = ifelse(cor.p.value <= 0.05, 1, 0)) |>
+  filter(imp_predictor == 1) |>
+  select(V1, V2, imp_predictor) |>
+  mutate_at(c("V1", "V2"), str_remove_all, "^ms_") |>
+  mutate_at(c("V1", "V2"), as.character) |>
+  unique()
+
+imp_predictor_matrix <-
+  imp_predictor_matrix |>
+  rbind(`colnames<-`(imp_predictor_matrix, c("V2", "V1", "imp_predictor"))) |>
+  unique() |>
+  right_join(
+    expand.grid(
+      V1 = setdiff(colnames(transformed_data), "id")
+      , V2 = setdiff(colnames(transformed_data), "id")
+      , stringsAsFactors = FALSE
+    )
+    , by = join_by(V1, V2)
+  ) |>
+  spread(V2, imp_predictor, fill = 0) |>
+  column_to_rownames(var = "V1") |>
+  as.matrix()
+
+imp_predictor_matrix <-
+  imp_predictor_matrix[
+    setdiff(colnames(transformed_data), "id")
+    , setdiff(colnames(transformed_data), "id")
+  ]
+```
+
+```{r Performing multiple imputation, eval=FALSE, include=FALSE}
+imp_results <-
+  suppressWarnings(
+    mice(
+      data = transformed_data
+      , method = 'pmm'
+      , m = 10
+      , seed = seed
+      , predictorMatrix = imp_predictor_matrix
+      , print = FALSE
+    )
+  )
+
+saveRDS(imp_results, "data/imp_results.rds")
+```
+
+```{r Load pre-performed multiple imputation, include=FALSE}
+imp_results <- readRDS("data/imp_results.rds")
+```
+
+```{r Obtain imputed data, eval=FALSE, include=FALSE}
+imputed_data <-
+  mice.mids(imp_results, newdata = cleaned_data) |>
+  complete(1)
+
+saveRDS(imputed_data, "data/imputed_data.rds")
+```
+
+```{r Load pre-obtained imputed data, include=FALSE}
+imputed_data <- readRDS("data/imputed_data.rds")
+```
+
+```{r Finalize readily-analyzed data, include=FALSE}
+processed_data <- imputed_data
+```
+
+# Descriptive statistics
+
+```{r Determine variables, include=FALSE}
+var <- list()
+
+var$s <- c("id")
+
+var$dependent <- "asd"
+
+var$independent <-
+  colnames(processed_data)[str_detect(colnames(processed_data), "^m[:digit:]*_")]
+
+
+var$covariates <-
+  processed_data %>%
+  colnames() %>%
+  setdiff(unlist(var))
+```
+
+```{r Read descriptive variable-types, include=FALSE}
+variable_desc_type <-
+  cleaned_metadata |>
+  select(
+    variable = colname, old_type = class, new_type = class, desc_type = class
+  ) |>
+  unique()
+```
+
+```{r Modify descriptive variable-types, include=FALSE}
+desc_data <-
+  processed_data |>
+  filter(id %in% train_id) |>
+  imap(
+    ~ data.frame(
+        value =
+          ifelse(
+            filter(variable_desc_type, variable == .y)$desc_type != "numeric"
+            , ifelse(.y == "id", as.character, as.factor)
+            , as.numeric
+          )(.x)
+      ) |>
+      `colnames<-`(.y)
+  ) |>
+  reduce(cbind)
+```
+
+```{r Simplify correlation pair to identify unit of obs, include=FALSE}
+correlation_pair_simplified <-
+  correlation_pair |>
+  unique()
+```
+
+```{r Identify unit of obs for each outcome-variable, include=FALSE}
+outcome_variable_unit <-
+  var$dependent |>
+  lapply(
+    \(x)
+    data.frame(outcome = x, variable = c(var$independent, var$covariates))
+  ) |>
+  reduce(rbind) |>
+  mutate(
+    unit =
+      mapply(
+        FUN =
+          \(x, y)
+          correlation_pair_simplified |>
+            filter((V1 == x & V2 == y) | (V2 == y & V1 == x)) |>
+            pull(unit) |>
+            paste0(collapse = "//")
+          , outcome
+          , variable
+      )
+  ) |>
+  mutate(unit = ifelse(unit == "", "id", unit))
+```
+
+```{r Outcome-wise average and SD, include=FALSE}
+avg_sd_data <-
+  var$dependent |>
+  `names<-`(var$dependent) |>
+  lapply(
+    \(x)
+    desc_data |>
+      select_at(c(var$independent, var$covariates)) |>
+      select_if(is.numeric) |>
+      mutate(seq = seq(n())) |>
+      gather(variable, value, -seq) |>
+      left_join(
+        desc_data |>
+          select_at(c(var$s, var$t, x)) |>
+          mutate(seq = seq(n()))
+        , by = join_by(seq)
+      ) |>
+      select(-seq) |>
+      mutate(outcome = x) |>
+      left_join(outcome_variable_unit, by = join_by(outcome, variable)) |>
+      mutate(unit_id = ifelse(unit == "id", id, paste0(id, "_" ,t))) |>
+      rename_at(x, \(x) "category") |>
+      select(unit_id, outcome, category, variable, unit, value) |>
+      unique()|>
+      group_by(variable) |>
+      mutate(N = n()) |>
+      group_by(outcome, category, variable, unit, N) |>
+      summarize(
+        avg = mean(value)
+        , std = sd(value)
+        , .groups = 'drop'
+      )
+  ) |>
+  reduce(rbind)
+```
+
+```{r Outcome-wise proportion, include=FALSE}
+prop_n_data <-
+  var$dependent |>
+  `names<-`(var$dependent) |>
+  lapply(
+    \(x)
+    desc_data |>
+      select_at(c(var$independent, var$covariates)) |>
+      select_if(\(x) !is.numeric(x)) |>
+      mutate_all(as.character) |>
+      mutate(seq = seq(n())) |>
+      gather(variable, value, -seq) |>
+      left_join(
+        desc_data |>
+          select_at(c(var$s, var$t, x)) |>
+          mutate(seq=seq(n()))
+        ,by = join_by(seq)
+      ) |>
+      select(-seq) |>
+      mutate(outcome = x) |>
+      left_join(outcome_variable_unit, by = join_by(outcome, variable)) |>
+      mutate(unit_id = ifelse(unit == "id", id, paste0(id, "_" ,t))) |>
+      rename_at(x, \(x) "category") |>
+      select(unit_id, outcome, category, variable, unit, value) |>
+      unique() |>
+      group_by(variable) |>
+      mutate(N = n()) |>
+      group_by(outcome, category, variable, unit, N, value) |>
+      summarize(n = n(), .groups='drop') |>
+      group_by(outcome, category, variable, unit, N) |>
+      mutate(total = sum(n)) |>
+      ungroup() |>
+      mutate(p = round(n / total * 100, 0))
+  ) |>
+  reduce(rbind)
+```
+
+```{r Summarize sample characteristics - create, include=FALSE}
+desc_stats <-
+  list(
+    avg_sd_data |>
+      mutate_at(c("avg", "std"), round, 2) |>
+      mutate(std = paste0("(", as.character(std), ")")) |>
+      unite(avg_std, avg, std, sep=" ") |>
+      mutate(value = NA) |>
+      rename(summary = avg_std)
+    ,prop_n_data |>
+      select(-total) |>
+      mutate(n = paste0("(", as.character(n), ")")) |>
+      unite(p_n, p, n, sep = " ") |>
+      rename(summary = p_n)
+  ) |>
+  lapply(mutate_at, "category", as.character) |>
+  lapply(mutate_at, "category", \(x) ifelse(is.na(x), "(missing)", x)) |>
+  lapply(unite, dep_var, outcome, category, sep = " ") |>
+  lapply(mutate_at, "dep_var", \(x) factor(x, unique(x))) |>
+  lapply(spread, dep_var, summary, fill = "0 (0)") |>
+  reduce(rbind) |>
+  mutate_at("value", as.character) |>
+  mutate_at(
+    "value"
+    ,\(x) ifelse(is.na(x), "average (SD)", paste0(x," % (n)"))
+  ) |>
+  rbind(
+    prop_n_data |>
+      mutate_at("category", as.character) |>
+      mutate_at("category", \(x) ifelse(is.na(x), "(missing)", x)) |>
+      unite(variable, outcome, category, sep = " ") |>
+      select(variable, unit, N,  total) |>
+      unique() |>
+      mutate_at("variable", \(x) factor(x, unique(x))) |>
+      mutate(total = paste0(total, " (", round(total/N*100, 2),")")) |>
+      spread(variable, total, fill = 0) |>
+      mutate(variable = "total (prevalence)", value = "n (%)") |>
+      select(unit, N, variable, value, everything())
+  ) |>
+  arrange(
+    desc(unit)
+    , N
+    , factor(variable, c("total (prevalence)", var$independent, var$covariates))
+  ) |>
+  select(unit, N, everything())
+
+desc_stats <-
+  desc_stats |>
+  select_if(
+    colnames(desc_stats) %in% c("unit", "N", "variable", "value")
+    | str_detect(colnames(desc_stats), "^asd")
+  ) |>
+  left_join(
+    rbind(
+        correlation_matrix |>
+          filter(str_detect(V2, "^asd")) |>
+          select(variable = V1, cor.p.value)
+        , correlation_matrix |>
+          filter(str_detect(V1, "^asd")) |>
+          select(variable = V2, cor.p.value)
+      )
+    , by = join_by(variable)
+  ) |>
+  mutate(
+    cor.p.value =
+      ifelse(
+        is.na(cor.p.value)
+        , ""
+        , ifelse(
+            cor.p.value < 0.001
+            , "<0.001"
+            , ifelse(cor.p.value > 0.05, ">0.05", round(cor.p.value, 3))
+          )
+      )
+  ) |>
+  left_join(
+    cleaned_metadata |>
+      select(variable = colname, label = english_term) |>
+      unique()
+    , by = join_by(variable)
+  ) |>
+  left_join(
+    cleaned_metadata |>
+      filter(class == "numeric") |>
+      select(variable = colname, metric = unit) |>
+      unique()
+    , by = join_by(variable)
+  ) |>
+  mutate(
+    variable = ifelse(is.na(label), str_to_sentence(variable), label)
+    , value = ifelse(is.na(metric), value, paste0(metric, " ", value))
+  ) |>
+  select(-label, -metric) |>
+  group_by(unit, N) |>
+  mutate(variable = ifelse(duplicated(variable), "", variable)) |>
+  ungroup() |>
+  mutate(
+    unit = ifelse(duplicated(unit), "", unit)
+    , N = ifelse(duplicated(N), "", N)
+  ) |>
+  mutate_all(str_replace_all, "NA \\(NA\\)", "N/A") |>
+  select(-unit, -N)
+
+desc_stats <-
+  desc_stats |>
+  mutate_at("variable", str_replace_all, "^low", "Low") |>
+  mutate_at("value", str_remove_all, "^[:digit:]+-") |>
+  `colnames<-`(
+    colnames(desc_stats) |>
+      str_to_sentence() |>
+      str_replace_all("Value", "") |>
+      str_replace_all("Asd 0-no", "ASD (-)") |>
+      str_replace_all("Asd 1-yes", "ASD (+)") |>
+      str_replace_all("Cor.p.value", "p-value")
+  )
+```
+
+```{r Summarize sample characteristics - show, echo=FALSE}
+table_n <- table_n + 1
+desc_stats |>
+  kable(
+    caption = paste0("Table ", table_n, ". Sample characteristics.")
+    , format = kable_format
+  ) |>
+  footnote(
+    paste0(
+      "ASD, autism spectrum disorder; "
+      , "BPD, bronchopulmonary dysplasia; "
+      , "hs-PDA, hemodinamically-significant patent ductus arteriosus; "
+      , "IMV, intermittent mandatory ventilation; "
+      , "m/o, month old"
+      , "NEC, necrotizing enterocolitis; "
+      , "ROP, retinopathy of prematurity; "
+      , "SD, standard deviation."
+    )
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(desc_stats)), extra_css = "vertical-align:top;")
+```
+
+# Feature extraction
+
+```{r Finalize regression-ready data, include=FALSE}
+reg_data <-
+  processed_data |>
+  filter(id %in% train_id)
+```
+
+# Univariate regression analysis
+
+```{r Conduct univariate regression analysis, include=FALSE}
+univar_reg <-
+  var$dependent |>
+  lapply(
+    \(x)
+    c(var$independent, var$covariates) |>
+      `names<-`(c(var$independent, var$covariates)) |>
+      lapply(c, x) |>
+      lapply(rev) |>
+      lapply(paste0, collapse = '~') |>
+      lapply(as.formula) |>
+      lapply(
+        \(x)
+        suppressWarnings(
+          reg_fn(
+            formula = x
+            , data =
+              reg_data |>
+              select_at(
+                c(outcome_variable_unit |>
+                    filter(outcome == as.character(x)[2]) |>
+                    filter(variable == as.character(x)[3]) |>
+                    pull(unit) |>
+                    str_split("\\|") |>
+                    unlist()
+                  , as.character(x)[2]
+                  , as.character(x)[3]
+                )
+              ) |>
+              mutate_at(
+                as.character(x)[2]
+                , \(x) ifelse(x == levels(x)[1], 0, 1)
+              ) |>
+              unique()
+          )
+        )
+      ) |>
+      lapply(tidy) |>
+      imap( ~ mutate(.x, outcome = x, variable = .y)) |>
+      lapply(\(x) select_if(x, colnames(x) != "robust.se")) |>
+      reduce(rbind) |>
+      select(outcome, variable, everything()) |>
+      mutate(
+        term = str_remove_all(term, paste0("^", variable))
+        , term = ifelse(term == "", "value", term)
+        , OR = exp(estimate)
+        , LB = exp(estimate - qnorm(0.975) * std.error)
+        , UB = exp(estimate + qnorm(0.975) * std.error)
+      )
+  ) |>
+  reduce(rbind)
+```
+
+```{r Univariate regression analysis - create, include=FALSE}
+univar_reg_results <-
+  univar_reg  |>
+  filter(term != "(Intercept)") |>
+  select_at(c("outcome", "variable", "term", "OR", "LB", "UB", "p.value")) |>
+  left_join(
+    lapply(reg_data, \(x) levels(x)[1])[sapply(reg_data, is.factor)] |>
+      as.data.frame() |>
+      gather(variable, reference)
+    , by = join_by(variable)
+  ) |>
+  unite(term, term, reference, sep = " vs. ") |>
+  left_join(
+    cleaned_metadata |>
+      select(variable = colname, label = english_term) |>
+      unique()
+    , by = join_by(variable)
+  ) |>
+  left_join(
+    cleaned_metadata |>
+      filter(class == "numeric") |>
+      select(variable = colname, metric = unit) |>
+      unique()
+    , by = join_by(variable)
+  ) |>
+  mutate(
+    variable = ifelse(is.na(label), str_to_sentence(variable), label)
+    , term = ifelse(is.na(metric), term, metric)
+  ) |>
+  select(-label, -metric) |>
+  mutate(
+    variable =
+      paste0(
+        variable
+        , ifelse((LB > 1 | UB < 1) & p.value <= 0.05, "*", "")
+      )
+  ) |>
+  mutate_at(4:7, round, 3) |>
+  mutate(outcome = factor(outcome, unique(outcome))) |>
+  arrange(outcome, p.value) |>
+  mutate(
+    p.value =
+      ifelse(p.value < 0.001, "<0.001", round(p.value, 3)) |>
+      as.character()
+  ) |>
+  select(-outcome) |>
+  mutate(variable = ifelse(duplicated(variable), "", variable)) |>
+  mutate_all(str_replace_all, "NA \\(NA\\)", "N/A")
+
+univar_reg_results <-
+  univar_reg_results |>
+  mutate_at("term", str_remove_all, "[:digit:]+-") |>
+  mutate_at("term", str_remove_all, "family social risk ") |>
+  mutate_at("variable", str_replace_all, "^low", "Low") |>
+  `colnames<-`(
+    colnames(univar_reg_results) |>
+      str_to_sentence() |>
+      str_replace_all("Term", "") |>
+      str_replace_all("Or", "OR") |>
+      str_replace_all("Lb", "LB") |>
+      str_replace_all("Ub", "UB") |>
+      str_replace_all("P.value", "p-value")
+  )
+```
+
+```{r Univariate regression analysis - show, echo=FALSE}
+table_n <- table_n + 1
+univar_reg_results |>
+  kable(
+    caption = paste0("Table ", table_n, ". Univariate regression analysis.")
+    , format = kable_format
+  ) |>
+  footnote(
+    paste0(
+      "*, either LB > 1 or UB < 1 and p-value <= 0.05."
+      , "BPD, bronchopulmonary dysplasia; "
+      , "hs-PDA, hemodinamically-significant patent ductus arteriosus; "
+      , "IMV, intermittent mandatory ventilation; "
+      , "m/o, month old"
+      , "LB, lower bound; "
+      , "NEC, necrotizing enterocolitis; "
+      , "OR, odds ratio; "
+      , "ROP, retinopathy of prematurity; "
+      , "UB, upper bound."
+    )
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(univar_reg_results)), extra_css = "vertical-align:top;")
+```
+
+```{r Filter significant univariate regression, include=FALSE}
+univar_reg_sig <-
+  univar_reg |>
+  filter(term != '(Intercept)') |>
+  filter((LB > 1 | UB < 1) & p.value <= 0.05) |>
+  mutate(outcome = factor(outcome, unique(outcome))) |>
+  arrange(outcome, p.value)
+```
+
+```{r Obtain variables in sig uni reg results, include=FALSE}
+univar_reg_sig_var <-
+  var$dependent |>
+  `names<-`(var$dependent) |>
+  lapply(
+    \(x)
+    univar_reg_sig |>
+      filter(outcome == x) |>
+      pull(variable) |>
+      unique()
+  )
+```
+
+# Covariate selection
+
+```{r Variables with significant correlations, include=FALSE}
+sig_var <-
+  correlation_matrix |>
+  filter(!(str_detect(V1, "^ms_") | str_detect(V2, "^ms_"))) |>
+  filter(!is.na(cor.p.value)) |>
+  mutate(predictor = ifelse(cor.p.value <= 0.05, 1, 0)) |>
+  filter(predictor == 1) |>
+  select(V1, V2, predictor) |>
+  mutate_at(c("V1", "V2"), as.character) |>
+  mutate_at(c("V1", "V2"), \(x) ifelse(x == "t_wk", "t", x)) |>
+  unique()
+
+sig_var <-
+  sig_var |>
+  rbind(`colnames<-`(sig_var, c("V2", "V1", "predictor"))) |>
+  unique() |>
+  right_join(
+    expand.grid(
+      V1 = setdiff(colnames(reg_data), "id")
+      , V2 = setdiff(colnames(reg_data), "id")
+      , stringsAsFactors = FALSE
+    )
+    , by = join_by(V1, V2)
+  ) |>
+  spread(V2, predictor, fill = 0) |>
+  column_to_rownames(var = "V1") |>
+  as.matrix()
+
+sig_var <-
+  sig_var[setdiff(colnames(reg_data), "id"), setdiff(colnames(reg_data), "id")]
+```
+
+```{r Create graph data frame based on simplified direction, include=FALSE}
+correlation_graph_df <-
+  univar_reg_sig_var |>
+  imap(
+    ~ sig_var[.x, .x] |>
+      as.data.frame() |>
+      rownames_to_column(var = "from") |>
+      gather(to, predictor, -from) |>
+      filter(predictor == 1) |>
+      select(-predictor)
+  )
+```
+
+```{r Determine adjustment per pair variable-covariate, include=FALSE}
+multivar_adjustment_paired <-
+  correlation_graph_df |>
+  imap(
+    ~ .x |>
+      right_join(data.frame(to = univar_reg_sig_var[[.y]]), by = join_by(to)) |>
+      select(variable = to, covariates = from) |>
+      mutate(
+        covariates =
+          paste0(
+            variable
+            , ifelse(
+                is.na(covariates) | covariates == "NA"
+                , "", paste0("+", covariates)
+              )
+          )
+      ) |>
+      mutate(formula = paste0(.y, "~", covariates)) |>
+      mutate(
+        covariates = str_remove_all(covariates, paste0(variable, "\\+*"))
+      ) |>
+      arrange(
+        factor(variable, unique(filter(univar_reg_sig, outcome == .y)$variable))
+      )
+  )
+```
+
+```{r Conduct multi reg analysis per pair var-covar, eval=FALSE, include=FALSE}
+multivar_reg_paired <-
+  var$dependent |>
+  pblapply(
+    \(x)
+    multivar_adjustment_paired[[x]] |>
+      pull(formula) |>
+      `names<-`(multivar_adjustment_paired[[x]]$variable) |>
+      lapply(as.formula) |>
+      lapply(
+        \(x)
+        suppressWarnings(
+            reg_fn(
+              formula = x
+              , data =
+                reg_data |>
+                select_at(
+                  c(outcome_variable_unit |>
+                      filter(outcome == as.character(x)[2]) |>
+                      filter(
+                        variable
+                        %in% str_split(
+                          as.character(x)[3], pattern = " \\+ "
+                        )[[1]]
+                      ) |>
+                      pull(unit) |>
+                      str_split("\\|") |>
+                      unlist() |>
+                      unique()
+                    , as.character(x)[2]
+                    , str_split(as.character(x)[3], pattern = " \\+ ")[[1]]
+                  )
+                ) |>
+                mutate_at(
+                  as.character(x)[2]
+                  , \(x) ifelse(x == levels(x)[1], 0, 1)
+                ) |>
+                unique()
+            )
+          ) |>
+          tidy() |>
+          list() |>
+          c(list(formula = x))
+      ) |>
+      imap(
+        ~ .x[[1]] |>
+          mutate(
+            outcome = x
+            , variable = .y
+            , covariates =
+              str_split(as.character(.x[[2]])[3], "\\+")[[1]][2]
+          )
+      ) |>
+      lapply(\(x) select_if(x, colnames(x) != "robust.se")) |>
+      reduce(rbind) |>
+      select(outcome, variable, covariates, everything()) |>
+      mutate(
+        term = str_remove_all(term, variable)
+        , term = ifelse(term == "", "value", term)
+        , OR = exp(estimate)
+        , LB = exp(estimate - qnorm(0.975) * std.error)
+        , UB = exp(estimate + qnorm(0.975) * std.error)
+      )
+  ) |>
+  reduce(rbind)
+
+saveRDS(multivar_reg_paired, "data/multivar_reg_paired.rds")
+```
+
+```{r Load pre-conducted multi reg analysis per pair var-covar, include=FALSE}
+multivar_reg_paired <- readRDS("data/multivar_reg_paired.rds")
+```
+
+```{r Identify effect size changes after paired adjustment, include=FALSE}
+es_change_paired <-
+  univar_reg  |>
+  filter(term != "(Intercept)") |>
+  filter((LB > 1 | UB < 1) & p.value <= 0.05) |>
+  select(outcome, variable, term, OR, LB, UB) |>
+  left_join(
+    multivar_reg_paired  |>
+      filter(term != "(Intercept)") |>
+      inner_join(
+        univar_reg |>
+          select(outcome, variable, term) |>
+          unique()
+        , by = join_by(outcome, variable, term)
+      ) |>
+      select(outcome, variable, covariates, term, OR, LB, UB)
+    , by = join_by(outcome, variable, term)
+  ) |>
+  mutate_at(c("outcome", "variable"), \(x) factor(x, unique(x))) |>
+  select(outcome, variable, covariates, everything()) |>
+  mutate(
+    es_change =
+      case_when(
+        (LB.x > 1 & LB.y > OR.x) | (UB.x < 1 & UB.y < OR.x) ~ "larger"
+        , (LB.x > 1 & UB.y < 1) | (UB.x < 1 & LB.y > 1) ~ "flipped"
+        , (LB.x > 1 & UB.y < OR.x & LB.y > 1)
+          | (UB.x < 1 & LB.y > OR.x & UB.y < 1)
+          ~ "smaller"
+        , (LB.x > 1 & UB.y > 1 & LB.y < 1)
+          | (UB.x < 1 & UB.y > 1 & LB.y < 1)
+          ~ "insignificant"
+        , (UB.y > OR.x & LB.y < OR.x) ~ "unchanged"
+        , TRUE ~ "unclassified"
+      )
+  )
+```
+
+```{r Create data frame based on selected covariates, include=FALSE}
+covariate_df <-
+  var$dependent |>
+  `names<-`(var$dependent) |>
+  lapply(
+    \(x)
+    es_change_paired |>
+      rbind(
+        es_change_paired |>
+          mutate(variable2 = covariates, covariates2 = variable) |>
+          mutate(variable = variable2, covariates = covariates2) |>
+          select(-variable2, -covariates2)
+      ) |>
+      filter(outcome == x) |>
+      filter(es_change %in% c("smaller")) |>
+      select(from = variable, to = covariates) |>
+      unique() |>
+      mutate_all(as.character)
+  )
+```
+
+# Multivariate regression analysis
+
+```{r Determine adjustment, include=FALSE}
+multivar_adjustment <-
+  covariate_df |>
+  imap(
+    ~ .x |>
+      right_join(data.frame(to = univar_reg_sig_var[[.y]]), by = join_by(to)) |>
+      group_by(to) |>
+      mutate(seq = seq(n())) |>
+      rbind(
+        univar_reg_sig |>
+          filter(outcome == .y) |>
+          select(-outcome) |>
+          select(to = variable) |>
+          mutate(seq = 0, from = to)
+      ) |>
+      arrange(to, seq) |>
+      group_by(to) |>
+      summarize(covariates = paste0(from[!is.na(from)], collapse = "+")) |>
+      rename(variable = to) |>
+      mutate(formula = paste0(.y, "~", covariates)) |>
+      mutate(
+        covariates = str_remove_all(covariates, paste0(variable, "\\+*"))
+      ) |>
+      arrange(
+        factor(variable, unique(filter(univar_reg_sig, outcome == .y)$variable))
+      )
+  )
+```
+
+```{r Conduct multivariate regression analysis, include=FALSE}
+multivar_reg <-
+  var$dependent |>
+  lapply(
+    \(x)
+    multivar_adjustment[[x]] |>
+      pull(formula) |>
+      `names<-`(multivar_adjustment[[x]]$variable) |>
+      lapply(as.formula) |>
+      lapply(
+        \(x)
+        suppressWarnings(
+          reg_fn(
+            formula = x
+            , data =
+              reg_data |>
+              select_at(
+                c(outcome_variable_unit |>
+                    filter(outcome == as.character(x)[2]) |>
+                    filter(
+                      variable
+                      %in% str_split(
+                        as.character(x)[3], pattern = " \\+ "
+                      )[[1]]
+                    ) |>
+                    pull(unit) |>
+                    str_split("\\|") |>
+                    unlist() |>
+                    unique()
+                  , as.character(x)[2]
+                  , str_split(as.character(x)[3], pattern = " \\+ ")[[1]]
+                )
+              ) |>
+              mutate_at(
+                as.character(x)[2]
+                , \(x) ifelse(x == levels(x)[1], 0, 1)
+              ) |>
+              unique()
+          )
+        ) |>
+          tidy() |>
+          list() |>
+          c(list(formula = x))
+      ) |>
+      imap(
+        ~ .x[[1]] |>
+          mutate(
+            outcome = x
+            , variable = .y
+            , covariates =
+              str_split(as.character(.x[[2]])[3], "\\+")[[1]][-1] |>
+              paste0(collapse = " + ")
+          )
+      ) |>
+      lapply(\(x) select_if(x, colnames(x) != "robust.se")) |>
+      reduce(rbind) |>
+      select(outcome, variable, covariates, everything()) |>
+      mutate(
+        term = str_remove_all(term, variable)
+        , term = ifelse(term == "", "value", term)
+        , OR = exp(estimate)
+        , LB = exp(estimate - qnorm(0.975) * std.error)
+        , UB = exp(estimate + qnorm(0.975) * std.error)
+      )
+  ) |>
+  reduce(rbind)
+```
+
+```{r Multivariate regression analysis - compile, include=FALSE}
+multivar_reg_compiled <-
+  multivar_reg  |>
+  filter(term != "(Intercept)") |>
+  inner_join(
+    univar_reg |>
+      select(outcome, variable, term) |>
+      unique()
+    , by = join_by(outcome, variable, term)
+  ) |>
+  select_at(c("outcome", "variable", "term", "OR", "LB", "UB", "p.value")) |>
+  left_join(
+    multivar_adjustment |>
+      imap(~ select(mutate(.x, outcome = .y), outcome, everything())) |>
+      reduce(rbind) |>
+      select(-formula) |>
+      mutate_at("covariates", str_replace_all, "\\+", ", ") |>
+      separate_rows(covariates, sep = ", ") |>
+      mutate_at("covariates", trimws) |>
+      left_join(
+        cleaned_metadata |>
+          select(covariates = colname, label = english_term) |>
+          unique()
+        , by = join_by(covariates)
+      ) |>
+      mutate(
+        covariates = ifelse(is.na(label), str_to_sentence(covariates), label)
+      ) |>
+      select(-label) |>
+      group_by(outcome, variable) |>
+      summarize(
+        covariates = paste0(covariates, collapse = ", "), .groups = "drop"
+      )
+    , by = join_by(outcome, variable)
+  ) |>
+  left_join(
+    lapply(reg_data, \(x) levels(x)[1])[sapply(reg_data, is.factor)] |>
+      as.data.frame() |>
+      gather(variable, reference)
+    , by = join_by(variable)
+  ) |>
+  unite(term, term, reference, sep = " vs. ") |>
+  left_join(
+    cleaned_metadata |>
+      select(variable = colname, label = english_term) |>
+      unique()
+    , by = join_by(variable)
+  ) |>
+  left_join(
+    cleaned_metadata |>
+      filter(class == "numeric") |>
+      select(variable = colname, metric = unit) |>
+      unique()
+    , by = join_by(variable)
+  ) |>
+  mutate(
+    variable = ifelse(is.na(label), str_to_sentence(variable), label)
+    , term = ifelse(is.na(metric), term, metric)
+  ) |>
+  select(-label, -metric) |>
+  mutate(
+    variable =
+      paste0(
+        variable
+        , ifelse((LB > 1 | UB < 1) & p.value <= 0.05, "*", "")
+      )
+  ) |>
+  mutate_at(4:7, round, 3) |>
+  mutate(
+    p.value =
+      ifelse(p.value<0.001, "<0.001", round(p.value,3)) |>
+      as.character()
+  ) |>
+  select(-outcome) |>
+  mutate(variable = ifelse(duplicated(variable), "", variable)) |>
+  mutate_all(str_replace_all, "NA \\(NA\\)", "N/A")
+
+multivar_reg_compiled <-
+  multivar_reg_compiled |>
+  mutate_at("term", str_remove_all, "[:digit:]+-") |>
+  mutate_at("term", str_remove_all, "family social risk ") |>
+  mutate_at("variable", str_replace_all, "^low", "Low") |>
+  `colnames<-`(
+    colnames(multivar_reg_compiled) |>
+      str_to_sentence() |>
+      str_replace_all("Term", "") |>
+      str_replace_all("Or", "OR") |>
+      str_replace_all("Lb", "LB") |>
+      str_replace_all("Ub", "UB") |>
+      str_replace_all("P.value", "p-value")
+  )
+```
+
+```{r Multivariate regression analysis - show, echo=FALSE}
+table_n <- table_n + 1
+multivar_reg_compiled |>
+  kable(
+    caption = paste0("Table ", table_n, ". Multivariate regression analysis.")
+    , format = kable_format
+  ) |>
+  footnote("*, either LB > 1 or UB < 1 and p-value <= 0.05.") |>
+  kable_classic() |>
+  column_spec(
+    seq(ncol(multivar_reg_compiled)), extra_css = "vertical-align:top;"
+  )
+```
+
+```{r Filter significant multivariate regression, include=FALSE}
+multivar_reg_sig <-
+  multivar_reg  |>
+  filter(term != "(Intercept)") |>
+  inner_join(
+    univar_reg |>
+      select(outcome, variable, term) |>
+      unique()
+    , by = join_by(outcome, variable, term)
+  ) |>
+  filter((LB > 1 | UB < 1) & p.value <= 0.05) |>
+  mutate(outcome = factor(outcome, unique(outcome))) |>
+  arrange(outcome, p.value)
+```
+
+```{r Obtain variables in sig multi reg results, include=FALSE}
+multivar_reg_sig_var <-
+  var$dependent |>
+  `names<-`(var$dependent) |>
+  lapply(
+    \(x)
+    multivar_reg_sig |>
+      filter(outcome == x) |>
+      pull(variable) |>
+      unique()
+  )
+```
+
+```{r Effect sizes - plot, include=FALSE}
+es_plots <-
+  var$dependent |>
+  `names<-`(var$dependent) |>
+  lapply(
+    \(x)
+    univar_reg  |>
+      filter(outcome == x) |>
+      filter(term != "(Intercept)") |>
+      filter((LB > 1 | UB < 1) & p.value <= 0.05) |>
+      select(outcome, variable, term, OR, LB, UB) |>
+      left_join(
+        multivar_reg  |>
+          filter(outcome == x) |>
+          filter(term != "(Intercept)") |>
+          inner_join(
+            univar_reg |>
+              select(outcome, variable, term) |>
+              unique()
+            , by = join_by(outcome, variable, term)
+          ) |>
+          select(outcome, variable, term, OR, LB, UB)
+        , by = join_by(outcome, variable, term)
+      ) |>
+      mutate_at(c("outcome"), \(x) factor(x, unique(x))) |>
+      mutate(
+        es_change =
+          case_when(
+            (LB.x > 1 & LB.y > OR.x) | (UB.x < 1 & UB.y < OR.x) ~ "larger"
+            , (LB.x > 1 & UB.y < 1) | (UB.x < 1 & LB.y > 1) ~ "flipped"
+            , (LB.x > 1 & UB.y < OR.x & LB.y > 1)
+              | (UB.x < 1 & LB.y > OR.x & UB.y < 1)
+              ~ "smaller"
+            , (LB.x > 1 & UB.y > 1 & LB.y < 1)
+              | (UB.x < 1 & UB.y > 1 & LB.y < 1)
+              ~ "insignificant"
+            , (UB.y > OR.x & LB.y < OR.x) ~ "unchanged"
+            , TRUE ~ "unclassified"
+          ) |>
+          factor(
+            c("larger"
+              , "unchanged"
+              , "smaller"
+              , "insignificant"
+              , "flipped"
+              , "unclassified"
+            )
+          )
+      ) |>
+      left_join(
+        multivar_adjustment |>
+          imap(~ select(mutate(.x, outcome = .y), outcome, everything())) |>
+          reduce(rbind) |>
+          select(-formula) |>
+          mutate_at("covariates", str_replace_all, "\\+", ", ") |>
+          separate_rows(covariates, sep = ", ") |>
+          mutate_at("covariates", trimws) |>
+          left_join(
+            cleaned_metadata |>
+              select(covariates = colname, label = english_term) |>
+              unique()
+            , by = join_by(covariates)
+          ) |>
+          mutate(
+            covariates = ifelse(is.na(label), str_to_sentence(covariates), label)
+          ) |>
+          select(-label) |>
+          group_by(outcome, variable) |>
+          summarize(
+            covariates = paste0(covariates, collapse = ", "), .groups = "drop"
+          )
+        , by = join_by(outcome, variable)
+      ) |>
+      left_join(
+        lapply(reg_data, \(x) levels(x)[1])[sapply(reg_data, is.factor)] |>
+          as.data.frame() |>
+          gather(variable, reference)
+        , by = join_by(variable)
+      ) |>
+      unite(term, term, reference, sep = " vs. ") |>
+      left_join(
+        cleaned_metadata |>
+          select(variable = colname, label = english_term) |>
+          unique()
+        , by = join_by(variable)
+      ) |>
+      left_join(
+        cleaned_metadata |>
+          filter(class == "numeric") |>
+          select(variable = colname, metric = unit) |>
+          unique()
+        , by = join_by(variable)
+      ) |>
+      mutate(
+        variable = ifelse(is.na(label), str_to_sentence(variable), label)
+        , term = ifelse(is.na(metric), term, metric)
+      ) |>
+      select(-label, -metric) |>
+      unite(variable_term, variable, term, sep = " = ") |>
+      mutate(variable_term = reorder(variable_term, OR.y)) |>
+      mutate(seq = seq(n())) |>
+      gather(
+        metric, value, -seq, -outcome, -variable_term, -es_change, -covariates
+      ) |>
+      separate(metric, c("metric", "adjustment"), sep = "\\.") |>
+      spread(metric, value) |>
+      arrange(seq) |>
+      select(-seq) |>
+      mutate(adjustment = ifelse(adjustment == "x", "no", "yes")) |>
+      mutate_at(c("OR", "LB", "UB"), \(x) ifelse(x >= 4, 4, x)) |>
+      filter(covariates != "" | (covariates == "" & adjustment == "no")) |>
+      ggplot(aes(variable_term, OR, color = adjustment)) +
+      geom_hline(yintercept = 1, lty = 2) +
+      geom_point(
+        aes(size = adjustment)
+        , alpha =0.75, , show.legend = FALSE, na.rm = TRUE
+      ) +
+      geom_errorbar(
+        aes(ymin = LB, ymax = UB)
+        , alpha =0.75, width = 0.75, na.rm = TRUE
+      ) +
+      # facet_grid(
+      #   es_change ~ outcome
+      #   , switch = "y", scales = "free_y", space = "free_y"
+      # ) +
+      coord_flip() +
+      scale_y_continuous(limits = c(0, 4), labels = c(0 , 1, 2, 3, "4+")) +
+      scale_size_manual(values = c(2, 1)) +
+      scale_color_discrete("Adjustment") +
+      xlab("") +
+      ylab("OR (95% CI)") +
+      theme(
+        legend.position = "top"
+        , strip.text.y.left = element_text(angle = 0)
+        , strip.placement = "outside"
+      )
+  )
+```
+
+```{r Effect sizes - show, echo=FALSE, fig.height=3.5, fig.width=7}
+es_plots[[1]]
+```
+
+```{r Effect sizes - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Effect size changes before and after adjustment for confounders."
+  )
+)
+```
+
+# Feature selection
+
+```{r Modeling step - empty, include=FALSE}
+modeval_step_empty <-
+  processed_metadata_unit_new |>
+  filter(!colname %in% c("id", "asd")) |>
+  select(variable = colname) |>
+  unique() |>
+  mutate(step = NA)
+```
+
+```{r Modeling step - write, include=FALSE}
+modeval_step_empty |>
+  write_csv("inst/extdata/modeval_step_empty.csv")
+```
+
+```{r Modeling step - filled, include=FALSE}
+modeval_step_filled <-
+  read_csv("inst/extdata/modeval_step_filled.csv", show_col_types = FALSE)
+```
+
+```{r Select predictors for baseline and residual, include=FALSE}
+predictor <-
+  multivar_reg_sig_var |>
+  lapply(\(x) data.frame(variable = x)) |>
+  lapply(
+    left_join
+    , modeval_step_filled
+    , by = join_by(variable)
+  ) |>
+  lapply(
+    arrange
+    , factor(step, c("neonatal_risk", "bsid_iii", "m_chat_r", "m_chat_f"))
+  ) |>
+  imap(
+    ~ list(
+        c("neonatal_risk")
+        , c("neonatal_risk", "bsid_iii")
+        , c("neonatal_risk", "bsid_iii", "m_chat_r")
+        , c("neonatal_risk", "bsid_iii", "m_chat_f")
+      ) |>
+      `names<-`(c("neonatal_risk", "bsid_iii", "m_chat_r", "m_chat_f")) |>
+      lapply(
+        \(x) .x$variable[
+          .x$step %in% x
+          & !str_detect(.x$variable, "composite_score")
+        ]
+      )
+  )
+```
+
+# Predictive modeling
+
+```{r Finalize data for modeling and evaluation, include=FALSE}
+modeval_data <-
+  processed_data |>
+  select_at(c("id", "asd", unique(unlist(predictor))))
+```
+
+```{r Determine data for predictive modeling, include=FALSE}
+predmod_data <-
+  predictor |>
+  lapply(\(x) x[sapply(x, length) > 0]) |>
+  imap(
+    ~ unique(modeval_step_filled$step) |>
+      `names<-`(unique(modeval_step_filled$step)) |>
+      lapply(
+        \(x)
+        modeval_data |>
+          mutate_if(is.factor, \(x) ifelse(is.na(x), NA, as.numeric(x) - 1)) |>
+          select_at(c(var$s, .y, .x[[x]])) |>
+          rename_at(.y, \(x) "outcome") |>
+          unique()
+      ) |>
+      imap(
+        ~ list(train = train_id, validation = val_id, test = test_id) |>
+          lapply(\(x) filter(.x, id %in% x))
+      )
+  )
+```
+
+```{r Write data for predictive modeling, eval=FALSE, include=FALSE}
+save_dir <- "inst/extdata/predmod_data/"
+if(!dir.exists(save_dir)) dir.create(save_dir, recursive = TRUE)
+
+predmod_data |>
+  imap(
+    ~ names(.x) |>
+      lapply(
+        \(x)
+        names(.x[[x]]) |>
+          lapply(
+            \(y)
+            .x[[x]][[y]] |>
+              write_csv(paste0(save_dir, .y, "_", x, "_", y, ".csv"))
+          )
+      )
+  )
+```
+
+```{r Determine machine learning algorithms, include=FALSE}
+algorithms <-
+  read_csv("inst/extdata/algorithms.csv", show_col_types = FALSE) |>
+  mutate_all(\(x) factor(x, unique(x)))
+
+model_dir <- "inst/extdata/model/"
+if(!dir.exists(model_dir)) dir.create(model_dir, recursive = TRUE)
+```
+
+# Model evaluation
+
+```{r Load results of sample size estimation, include=FALSE}
+sample_size_estimation <-
+  unique(modeval_step_filled$step) |>
+  `names<-`(unique(modeval_step_filled$step)) |>
+  lapply(
+    \(x)
+    algorithms$algorithm |>
+    `names<-`(algorithms$algorithm) |>
+      lapply(
+        \(y)
+        read_csv(
+            paste0(
+              "inst/extdata/model/", x, "/", y, "/sample_size_estimation.csv"
+            )
+            , show_col_types = FALSE
+          ) |>
+          mutate(step = x, algorithm = y)
+      ) |>
+      reduce(rbind)
+  ) |>
+  reduce(rbind) |>
+  mutate(
+    step = factor(step, names(predictor$asd))
+    , algorithm = factor(algorithm, algorithms$algorithm)
+  ) |>
+  left_join(
+    predmod_data$asd |>
+      imap(
+        ~ data.frame(
+            n =
+              .x$train |>
+              filter(outcome == 1) |>
+              select(-id, -outcome) |>
+              dim() |>
+              `names<-`(c("row", "col"))
+          ) |>
+          rownames_to_column(var = "dim") |>
+          mutate(step = .y)
+      ) |>
+      reduce(rbind) |>
+      spread(dim, n)
+    , by = join_by(step)
+  ) |>
+  mutate(epv = proportion * row / col)
+```
+
+```{r Fit EPV-AUROC with modified exponential decay, include=FALSE}
+mod_exp_decay <-
+  unique(modeval_step_filled$step) |>
+  `names<-`(unique(modeval_step_filled$step)) |>
+  lapply(
+    \(x)
+    algorithms$algorithm |>
+      `names<-`(algorithms$algorithm) |>
+      lapply(\(y) filter(sample_size_estimation, step == x & algorithm == y)) |>
+      imap(
+        ~ try(
+            nls(
+              auc_roc ~ 1 - a * exp(-k * epv)
+              , data = .x
+              , start = list(a = 1, k = 0.1)
+            )
+          )
+      )
+  )
+```
+
+```{r Extract results of EPV-AUROC modified exp decay fitting, include=FALSE}
+mod_exp_decay_results <-
+  mod_exp_decay |>
+  lapply(\(x) x[sapply(x, \(y) !is.character(y))]) |>
+  lapply(lapply, tidy) |>
+  imap(~ lapply(names(.x), \(x) mutate(.x[[x]], step = .y, algorithm = x))) |>
+  lapply(reduce, rbind) |>
+  reduce(rbind) |>
+  select(step, algorithm, term, estimate, p.value) |>
+  mutate(
+    p.value =
+      case_when(
+        p.value < 0.001 ~ "<0.001"
+        ,p.value > 0.05 ~ ">0.05"
+        ,TRUE ~ format(p.value, digits = 1)
+      ) |>
+      paste0(
+        ifelse(term == "k", paste0("\nk=", round(estimate, 3)), "")
+      )
+  ) |>
+  select(-estimate) |>
+  spread(term, p.value) |>
+  mutate(
+    step = factor(step, names(predictor$asd))
+    , algorithm = factor(algorithm, algorithms$algorithm)
+  ) |>
+  arrange(step, algorithm)
+```
+
+```{r Sample size estimation - create, include=FALSE}
+sample_size_estimation_plot_data <-
+  sample_size_estimation |>
+  left_join(
+    mod_exp_decay |>
+      lapply(\(x) x[sapply(x, \(y) !is.character(y))]) |>
+      lapply(lapply, predict) |>
+      imap(
+        ~ names(.x) |>
+          lapply(
+            \(x)
+            data.frame(
+              epv =
+                filter(sample_size_estimation, step == .y & algorithm == x)$epv
+              , auc_roc_med = .x[[x]]
+              , step = .y
+              , algorithm = x
+            )
+          )
+      ) |>
+      lapply(reduce, rbind) |>
+      reduce(rbind) |>
+      mutate(
+        step = factor(step, names(predictor$asd))
+        , algorithm = factor(algorithm, algorithms$algorithm)
+      )
+    , by = join_by(epv, step, algorithm)
+  ) |>
+  left_join(algorithms, by = join_by(algorithm)) |>
+  mutate(name = factor(str_wrap(name, 20), str_wrap(algorithms$name, 20)))
+```
+
+```{r Samp size neonatal risk - plot, include=FALSE}
+sample_size_estimation_plot_neonatal_risk <-
+  sample_size_estimation_plot_data |>
+  filter(step == "neonatal_risk") |>
+  ggplot(aes(epv, auc_roc)) +
+  geom_smooth(method = "loess", formula = y ~ x) +
+  geom_line(aes(y = auc_roc_med), color = "red", na.rm = TRUE) +
+  geom_point() +
+  geom_text(
+    data =
+      mod_exp_decay_results |>
+      filter(step == "neonatal_risk") |>
+      left_join(
+        sample_size_estimation |>
+          filter(step == "neonatal_risk") |>
+          filter(epv == min(epv))
+        , by = join_by(step, algorithm)
+      ) |>
+      mutate(
+        epv = 5
+        , auc_roc = auc_roc - ifelse(algorithm %in% c("svm", "dnn"), -0.1, 0.2)
+      ) |>
+      left_join(algorithms, by = join_by(algorithm)) |>
+      mutate(name = factor(str_wrap(name, 20), str_wrap(algorithms$name, 20)))
+    , aes(label = paste0("p(a)=", a, "\np(k)=", k))
+    , size = 3, hjust = 0, vjust = -0.1, check_overlap = TRUE
+  ) +
+  facet_wrap(~ name, ncol = 4, scales = "free_y") +
+  xlab(
+    "Number of samples with minority class of outcome per candidate predictor"
+  ) +
+  scale_y_continuous(
+    "AUC-ROC"
+    , breaks = seq(0, 1, 0.1)
+    , labels = scales::label_number(accuracy = 0.1)
+  )
+```
+
+```{r Samp size neonatal risk - show, echo=FALSE, fig.height=5, fig.width=7}
+sample_size_estimation_plot_neonatal_risk
+```
+
+```{r Samp size neonatal risk - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Sample size estimation at step of neonatal risk. Blue line indicates "
+    , "the LOESS. Red line indicates the modified exponential decay fitting. "
+    , "p(a) is the p-value of a where a is a parameter represents the factor "
+    , "by which the exponential term was scaled in the model and a higher "
+    , "value generally means a quicker initial increase. p(k) is the p-value "
+    , "of k where k is the rate of decay or growth in the exponential term "
+    , "and a positive k implies a decay (as x increases, the impact of "
+    , "increasing y diminishes) while a negative k suggests an erroneous "
+    , "model fit in this context because an increase in x should not lead to "
+    , "a decrease in y. AUC-ROC, the area under curve of receiver operating "
+    , "characteristics; LOESS, locally estimated scatterplot smoothing."
+  )
+)
+```
+
+```{r Samp size BSID-III - plot, include=FALSE}
+sample_size_estimation_plot_bsid_iii <-
+  sample_size_estimation_plot_data |>
+  filter(step == "bsid_iii") |>
+  ggplot(aes(epv, auc_roc)) +
+  geom_smooth(method = "loess", formula = y ~ x) +
+  geom_line(aes(y = auc_roc_med), color = "red", na.rm = TRUE) +
+  geom_point() +
+  geom_text(
+    data =
+      mod_exp_decay_results |>
+      filter(step == "bsid_iii") |>
+      left_join(
+        sample_size_estimation |>
+          filter(step == "bsid_iii") |>
+          filter(epv == min(epv))
+        , by = join_by(step, algorithm)
+      ) |>
+      mutate(
+        epv = 1
+        , auc_roc = auc_roc - ifelse(algorithm %in% c("svm", "dnn"), -0.1, 0.3)
+      ) |>
+      left_join(algorithms, by = join_by(algorithm)) |>
+      mutate(name = factor(str_wrap(name, 20), str_wrap(algorithms$name, 20)))
+    , aes(label = paste0("p(a)=", a, "\np(k)=", k))
+    , size = 3, hjust = 0, vjust = -0.1, check_overlap = TRUE
+  ) +
+  facet_wrap(~ name, ncol = 4, scales = "free_y") +
+  xlab(
+    "Number of samples with minority class of outcome per candidate predictor"
+  ) +
+  scale_y_continuous(
+    "AUC-ROC"
+    , breaks = seq(0, 1, 0.1)
+    , labels = scales::label_number(accuracy = 0.1)
+  )
+```
+
+```{r Samp size BSID-III - show, echo=FALSE, fig.height=5, fig.width=7}
+sample_size_estimation_plot_bsid_iii
+```
+
+```{r Samp size BSID-III - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Sample size estimation at step of BSID-III. Blue line indicates "
+    , "the LOESS. Red line indicates the modified exponential decay fitting. "
+    , "p(a) is the p-value of a where a is a parameter represents the factor "
+    , "by which the exponential term was scaled in the model and a higher "
+    , "value generally means a quicker initial increase. p(k) is the p-value "
+    , "of k where k is the rate of decay or growth in the exponential term "
+    , "and a positive k implies a decay (as x increases, the impact of "
+    , "increasing y diminishes) while a negative k suggests an erroneous "
+    , "model fit in this context because an increase in x should not lead to "
+    , "a decrease in y. AUC-ROC, the area under curve of receiver operating "
+    , "characteristics; LOESS, locally estimated scatterplot smoothing."
+  )
+)
+```
+
+```{r Samp size M-CHAT-R - plot, include=FALSE}
+sample_size_estimation_plot_m_chat_r <-
+  sample_size_estimation_plot_data |>
+  filter(step == "m_chat_r") |>
+  ggplot(aes(epv, auc_roc)) +
+  geom_smooth(method = "loess", formula = y ~ x) +
+  geom_line(aes(y = auc_roc_med), color = "red", na.rm = TRUE) +
+  geom_point() +
+  geom_text(
+    data =
+      mod_exp_decay_results |>
+      filter(step == "m_chat_r") |>
+      left_join(
+        sample_size_estimation |>
+          filter(step == "m_chat_r") |>
+          filter(epv == min(epv))
+        , by = join_by(step, algorithm)
+      ) |>
+      mutate(
+        epv = 1
+        , auc_roc = auc_roc - ifelse(algorithm %in% c("svm", "dnn"), -0.1, 0.3)
+      ) |>
+      left_join(algorithms, by = join_by(algorithm)) |>
+      mutate(name = factor(str_wrap(name, 20), str_wrap(algorithms$name, 20)))
+    , aes(label = paste0("p(a)=", a, "\np(k)=", k))
+    , size = 3, hjust = 0, vjust = -0.1, check_overlap = TRUE
+  ) +
+  facet_wrap(~ name, ncol = 4, scales = "free_y") +
+  xlab(
+    "Number of samples with minority class of outcome per candidate predictor"
+  ) +
+  scale_y_continuous(
+    "AUC-ROC"
+    , breaks = seq(0, 1, 0.1)
+    , labels = scales::label_number(accuracy = 0.1)
+  )
+```
+
+```{r Samp size M-CHAT-R - show, echo=FALSE, fig.height=5, fig.width=7}
+sample_size_estimation_plot_m_chat_r
+```
+
+```{r Samp size M-CHAT-R - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Sample size estimation at step of M-CHAT-R. Blue line indicates "
+    , "the LOESS. Red line indicates the modified exponential decay fitting. "
+    , "p(a) is the p-value of a where a is a parameter represents the factor "
+    , "by which the exponential term was scaled in the model and a higher "
+    , "value generally means a quicker initial increase. p(k) is the p-value "
+    , "of k where k is the rate of decay or growth in the exponential term "
+    , "and a positive k implies a decay (as x increases, the impact of "
+    , "increasing y diminishes) while a negative k suggests an erroneous "
+    , "model fit in this context because an increase in x should not lead to "
+    , "a decrease in y. AUC-ROC, the area under curve of receiver operating "
+    , "characteristics; LOESS, locally estimated scatterplot smoothing."
+  )
+)
+```
+
+```{r Samp size M-CHAT-F - plot, include=FALSE}
+sample_size_estimation_plot_m_chat_f <-
+  sample_size_estimation_plot_data |>
+  filter(step == "m_chat_f") |>
+  ggplot(aes(epv, auc_roc)) +
+  geom_smooth(method = "loess", formula = y ~ x) +
+  geom_line(aes(y = auc_roc_med), color = "red", na.rm = TRUE) +
+  geom_point() +
+  geom_text(
+    data =
+      mod_exp_decay_results |>
+      filter(step == "m_chat_f") |>
+      left_join(
+        sample_size_estimation |>
+          filter(step == "m_chat_f") |>
+          filter(epv == min(epv))
+        , by = join_by(step, algorithm)
+      ) |>
+      mutate(
+        epv = 1
+        , auc_roc = auc_roc - ifelse(algorithm %in% c("svm", "dnn"), -0.1, 0.3)
+      ) |>
+      left_join(algorithms, by = join_by(algorithm)) |>
+      mutate(name = factor(str_wrap(name, 20), str_wrap(algorithms$name, 20)))
+    , aes(label = paste0("p(a)=", a, "\np(k)=", k))
+    , size = 3, hjust = 0, vjust = -0.1, check_overlap = TRUE
+  ) +
+  facet_wrap(~ name, ncol = 4, scales = "free_y") +
+  xlab(
+    "Number of samples with minority class of outcome per candidate predictor"
+  ) +
+  scale_y_continuous(
+    "AUC-ROC"
+    , breaks = seq(0, 1, 0.1)
+    , labels = scales::label_number(accuracy = 0.1)
+  )
+```
+
+```{r Samp size M-CHAT-F - show, echo=FALSE, fig.height=5, fig.width=7}
+sample_size_estimation_plot_m_chat_f
+```
+
+```{r Samp size M-CHAT-F - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Sample size estimation at step of M-CHAT-F. Blue line indicates "
+    , "the LOESS. Red line indicates the modified exponential decay fitting. "
+    , "p(a) is the p-value of a where a is a parameter represents the factor "
+    , "by which the exponential term was scaled in the model and a higher "
+    , "value generally means a quicker initial increase. p(k) is the p-value "
+    , "of k where k is the rate of decay or growth in the exponential term "
+    , "and a positive k implies a decay (as x increases, the impact of "
+    , "increasing y diminishes) while a negative k suggests an erroneous "
+    , "model fit in this context because an increase in x should not lead to "
+    , "a decrease in y. AUC-ROC, the area under curve of receiver operating "
+    , "characteristics; LOESS, locally estimated scatterplot smoothing."
+  )
+)
+```
+
+```{r Select algorithms of which the sample size is sufficient, include=FALSE}
+algo_suff_sampsize <-
+  mod_exp_decay_results |>
+  separate(k, c("k_p.value", "k_estimate"), sep = "\nk=") |>
+  mutate_at(
+    c("a", "k_p.value", "k_estimate")
+    , \(x) 
+      suppressWarnings(
+        as.numeric(
+          ifelse(x == "<0.001", 0.001, ifelse(x == ">0.05", 0.051, x))
+        )
+      )
+  ) |>
+  filter(a <= 0.05 & k_p.value <= 0.05 & k_estimate >= 0)
+
+algo_suff_sampsize <-
+  unique(algo_suff_sampsize$step) |>
+  `names<-`(unique(algo_suff_sampsize$step)) |>
+  lapply(\(x) filter(algo_suff_sampsize, step == x)$algorithm)
+```
+
+```{r Create empty list for model evaluation, include=FALSE}
+eval <- list()
+```
+
+```{r Obtain the model evaluation data, include=FALSE}
+eval$df <-
+  algo_suff_sampsize |>
+  lapply(\(x) `names<-`(x, x)) |>
+  imap(
+    ~ .x |>
+      lapply(
+        \(x)
+        obtain_obs_pred(
+          ""
+          , paste0("inst/extdata/predmod_data/", "asd_", .y)
+          , paste0("inst/extdata/model/", .y, "/", x)
+          , set = c("train", "validation", "test")
+        )
+      )
+  )
+```
+
+```{r Evaluate calibration, include=FALSE}
+eval$calibration <-
+  eval$df |>
+  lapply(lapply, lapply, calibration, seed = seed)
+```
+
+```{r Evaluate decision, include=FALSE}
+eval$decision <-
+  eval$df |>
+  lapply(lapply, lapply, select, -id) |>
+  pblapply(lapply, lapply, decision, seed = seed)
+```
+
+```{r Evaluate discrimination, include=FALSE}
+eval$discrimination <-
+  eval$df |>
+  lapply(lapply, lapply, select, -id) |>
+  pblapply(lapply, lapply, discrimination, seed = seed)
+```
+
+```{r Cost of outcome - load, include=FALSE}
+cost_of_outcome <-
+  read_csv("inst/extdata/cost_of_outcome.csv", show_col_types = FALSE)
+```
+
+```{r Cost of outcome - create, include=FALSE}
+cost_of_outcome_results <-
+  cost_of_outcome |>
+  select(-variable) |>
+  mutate(
+    step =
+      ifelse(
+        step == "neonatal_risk"
+        , "Neonatal risk factors"
+        , str_to_upper(str_replace_all(step, "_", "-"))
+      )
+  ) |>
+  mutate_at("question", str_replace_all, "From 0 to 100, how", "How") |>
+  mutate_at(c("step", "question"), \(x) factor(x, unique(x))) |>
+  spread(question, answer) |>
+  mutate_at("step", as.character) |>
+  mutate(step = ifelse(duplicated(step), "", step))
+
+cost_of_outcome_results <-
+  cost_of_outcome_results |>
+  rename_all(str_to_sentence)
+```
+
+```{r Cost of outcome - show, echo=FALSE}
+table_n <- table_n + 1
+
+cost_of_outcome_results |>
+  kable(
+    caption = paste0("Table ", table_n, ". Cost of outcomes.")
+    , format = kable_format
+  ) |>
+  kable_classic() |>
+  column_spec(
+    seq(ncol(cost_of_outcome_results)), extra_css = "vertical-align:top;"
+  )
+```
+
+```{r Assess cost of outcome, include=FALSE}
+th_by_cost <-
+  cost_of_outcome |>
+  select(-question) |>
+  mutate_at(c("step", "variable"), \(x) factor(x, unique(x))) |>
+  spread(variable, answer) |>
+  mutate(
+    th =
+      (CFP - CTN) / (CFP - CTN + CFN - CTP)
+    , th = round(th, 2)
+  )
+```
+
+```{r Assign threshold, include=FALSE}
+th <-
+  th_by_cost$th |>
+  as.list() |>
+  `names<-`(th_by_cost$step)
+```
+
+```{r Determine threshold, include=FALSE}
+eval$threshold <-
+  eval$df |>
+  lapply(lapply, lapply, select, -id) |>
+  imap(
+    ~ .x |>
+      pblapply(
+        lapply
+        , thresholding
+        , standard = FALSE, optimal = FALSE, clinical = FALSE
+        , custom_metric = "th", custom_ref = th[[.y]]
+        , seed = seed
+      )
+  )
+```
+
+```{r Select well-calibrated and best models, include=FALSE}
+selected_model <-
+  list(
+    well_calibrated =
+      eval$calibration |>
+      lapply(select_well_calibrated_model)
+  )
+
+selected_model <-
+  selected_model |>
+  c(list(
+      best_f1 =
+        eval$threshold |>
+        imap(~ .x[selected_model$well_calibrated[[.y]]]) |>
+        lapply(select_best_f1_lb_model)
+    )
+  )
+```
+
+```{r Neonatal risk model calibration - plot, include=FALSE}
+neonatal_risk_calibration_plots <-
+  ggarrange(
+    eval$calibration$neonatal_risk$rr$validation |>
+      arrange_calib_plot(th$neonatal_risk)
+    , eval$calibration$neonatal_risk$nb$validation |>
+      arrange_calib_plot(th$neonatal_risk)
+    , eval$calibration$neonatal_risk$knn$validation |>
+      arrange_calib_plot(th$neonatal_risk)
+    , eval$calibration$neonatal_risk$rf$validation |>
+      arrange_calib_plot(th$neonatal_risk)
+    , eval$calibration$neonatal_risk$dnn$validation |>
+      arrange_calib_plot(th$neonatal_risk)
+    , nrow = 1, ncol = 5, widths = c(5, 5, 5, 5, 5), labels = LETTERS[1:5]
+  )
+```
+
+```{r Neo risk model calibration - show, echo=FALSE, fig.height=6, fig.width=15}
+neonatal_risk_calibration_plots
+```
+
+```{r Neonatal risk model calibration - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model calibration plots using neonatal risk based on "
+    , "validation set: (A) RR; (B) NB; (C) KNN; (D) RF; and (E) DNN. Vertical "
+    , "dashed lines indicate the cost-aware threshold. ASD, autism spectrum "
+    , "disorder; DNN, deep neural network; KNN, k-nearest neighbor; NB, naive "
+    , "Bayes; RF, random forest; RR, ridge regression."
+  )
+)
+```
+
+```{r Neonatal risk model DCA and ROC - plot, include=FALSE}
+neonatal_risk_dca_roc_curves <-
+  ggarrange(
+    list(
+        plot =
+          list(
+            data =
+              eval$decision$neonatal_risk[
+                selected_model$well_calibrated$neonatal_risk
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+        , prevalence =
+              eval$decision$neonatal_risk |>
+              sapply(\(x) x$validation$prevalence) |>
+              max()
+      ) |>
+      arrange_dec_plot(
+        dc_xmax = 0.25, dc_xby = 0.1
+        , dc_ymax = 0.2, dc_yby = 0.05
+        , dc_ta_angle = -50
+        , multiple = TRUE
+      ) +
+      geom_vline(xintercept = th$neonatal_risk, lty = 2)
+    , list(
+        plot =
+          list(
+            data =
+              eval$discrimination$neonatal_risk[
+                selected_model$well_calibrated$neonatal_risk
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+      ) |>
+      arrange_disc_plot(multiple = TRUE) +
+      geom_point(
+        data =
+          eval$discrimination$neonatal_risk[
+            selected_model$well_calibrated$neonatal_risk
+          ] |>
+          imap(
+            ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+          ) |>
+          reduce(rbind) |>
+          rename(th2 = th) |>
+          filter(th2 == th$neonatal_risk)
+      )
+    , nrow = 1, ncol = 2, widths = c(5, 5), labels = LETTERS[1:2]
+  )
+```
+
+```{r Neonatal risk model DCA and ROC - best, echo=FALSE}
+cat(
+  "Best model:"
+  , selected_model$best_f1$neonatal_risk |>
+    str_to_upper()
+)
+```
+
+```{r Neo risk model DCA and ROC - show, echo=FALSE, fig.height=4, fig.width=10}
+neonatal_risk_dca_roc_curves
+```
+
+```{r Neonatal risk model DCA and ROC - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model decision (A) and ROC (B) curves using neonatal "
+    , "risk based on validation set. Performances using the selected threshold "
+    , "are shown by dashed line in (A) and points in (B). ASD, autism spectrum "
+    , "disorder; DNN, deep neural network; KNN, k-nearest neighbor; NB, naive "
+    , "Bayes; RF, random forest; ROC, receiver operating characteristics; RR, "
+    , "ridge regression."
+  )
+)
+```
+
+```{r BSID-III model calibration - plot, include=FALSE}
+bsid_iii_calibration_plots <-
+  ggarrange(
+    eval$calibration$bsid_iii$dt$validation |>
+      arrange_calib_plot(th$bsid_iii)
+    , eval$calibration$bsid_iii$rf$validation |>
+      arrange_calib_plot(th$bsid_iii)
+    , nrow = 1, ncol = 2, widths = c(5, 5), labels = LETTERS[1:2]
+  )
+```
+
+```{r BSID-III model calibration - show, echo=FALSE, fig.height=6, fig.width=10}
+bsid_iii_calibration_plots
+```
+
+```{r BSID-III model calibration - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model calibration plots using BSID-III based on "
+    , "validation set: (A) DT; and (B) RF. Vertical dashed lines "
+    , "indicate the cost-aware threshold. ASD, autism spectrum disorder; "
+    , "BSID-III, Bayley scales of infant development version III; DT, "
+    , "decision tree; RF, random forest."
+  )
+)
+```
+
+```{r BSID-III model DCA and ROC - plot, include=FALSE}
+bsid_iii_dca_roc_curves <-
+  ggarrange(
+    list(
+        plot =
+          list(
+            data =
+              eval$decision$bsid_iii[
+                selected_model$well_calibrated$bsid_iii
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+        , prevalence =
+              eval$decision$bsid_iii[
+                selected_model$well_calibrated$bsid_iii
+              ] |>
+              sapply(\(x) x$validation$prevalence) |>
+              max()
+      ) |>
+      arrange_dec_plot(
+        dc_xmax = 0.25, dc_xby = 0.1
+        , dc_ymax = 0.2, dc_yby = 0.05
+        , dc_ta_angle = -50
+        , multiple = TRUE
+      ) +
+      geom_vline(xintercept = th$bsid_iii, lty = 2)
+    , list(
+        plot =
+          list(
+            data =
+              eval$discrimination$bsid_iii[
+                selected_model$well_calibrated$bsid_iii
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+      ) |>
+      arrange_disc_plot(multiple = TRUE) +
+      geom_point(
+        data =
+          eval$discrimination$bsid_iii[
+            selected_model$well_calibrated$bsid_iii
+          ] |>
+          imap(
+            ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+          ) |>
+          reduce(rbind) |>
+          rename(th2 = th) |>
+          filter(th2 == th$bsid_iii)
+      )
+    , nrow = 1, ncol = 2, widths = c(5, 5), labels = LETTERS[1:2]
+  )
+```
+
+```{r BSID-III model DCA and ROC - best, echo=FALSE}
+cat(
+  "Best model:"
+  , selected_model$best_f1$bsid_iii |>
+    str_to_upper()
+)
+```
+
+```{r BSID-III model DCA and ROC - show, echo=FALSE, fig.height=4, fig.width=10}
+bsid_iii_dca_roc_curves
+```
+
+```{r BSID-III model DCA and ROC - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model decision (A) and ROC (B) curves using BSID-III "
+    , "based on validation set. Performances using the selected threshold are "
+    , "shown by dashed line in (A) and points in (B). ASD, autism spectrum "
+    , "disorder; BSID-III, Bayley scales of ", "infant development version "
+    , "III; DT, decision tree; RF, random forest; ROC, receiver operating "
+    , "characteristics."
+  )
+)
+```
+
+```{r M-CHAT-R model calibration - plot, include=FALSE}
+m_chat_r_calibration_plots <-
+  ggarrange(
+    eval$calibration$m_chat_r$dt$validation |>
+      arrange_calib_plot(th$m_chat_r)
+    , eval$calibration$m_chat_r$rf$validation |>
+      arrange_calib_plot(th$m_chat_r)
+    , eval$calibration$m_chat_r$gbm$validation |>
+      arrange_calib_plot(th$m_chat_r)
+    , nrow = 1, ncol = 3, widths = c(5, 5, 5), labels = LETTERS[1:3]
+  )
+```
+
+```{r M-CHAT-R model calibration - show, echo=FALSE, fig.height=6, fig.width=15}
+m_chat_r_calibration_plots
+```
+
+```{r M-CHAT-R model calibration - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model calibration plots using M-CHAT-R based on "
+    , "validation set: (A) DT; (B) RF; and (C) GBM. Vertical dashed lines "
+    , "indicate the cost-aware threshold. ASD, autism spectrum disorder; "
+    , "M-CHAT-R, Bayley scales of infant development version III; DT, "
+    , "decision tree; GBM, gradient boosting machine; RF, random forest."
+  )
+)
+```
+
+```{r M-CHAT-R model DCA and ROC - plot, include=FALSE}
+m_chat_r_dca_roc_curves <-
+  ggarrange(
+    list(
+        plot =
+          list(
+            data =
+              eval$decision$m_chat_r[
+                selected_model$well_calibrated$m_chat_r
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+        , prevalence =
+              eval$decision$m_chat_r[
+                selected_model$well_calibrated$m_chat_r
+              ] |>
+              sapply(\(x) x$validation$prevalence) |>
+              max()
+      ) |>
+      arrange_dec_plot(
+        dc_xmax = 0.25, dc_xby = 0.1
+        , dc_ymax = 0.2, dc_yby = 0.05
+        , dc_ta_angle = -50
+        , multiple = TRUE
+      ) +
+      geom_vline(xintercept = th$m_chat_r, lty = 2)
+    , list(
+        plot =
+          list(
+            data =
+              eval$discrimination$m_chat_r[
+                selected_model$well_calibrated$m_chat_r
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+      ) |>
+      arrange_disc_plot(multiple = TRUE) +
+      geom_point(
+        data =
+          eval$discrimination$m_chat_r[
+            selected_model$well_calibrated$m_chat_r
+          ] |>
+          imap(
+            ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+          ) |>
+          reduce(rbind) |>
+          rename(th2 = th) |>
+          filter(th2 == th$m_chat_r)
+      )
+    , nrow = 1, ncol = 2, widths = c(5, 5), labels = LETTERS[1:2]
+  )
+```
+
+```{r M-CHAT-R model DCA and ROC - best, echo=FALSE}
+cat(
+  "Best model:"
+  , selected_model$best_f1$m_chat_r |>
+    str_to_upper()
+)
+```
+
+```{r M-CHAT-R model DCA and ROC - show, echo=FALSE, fig.height=4, fig.width=10}
+m_chat_r_dca_roc_curves
+```
+
+```{r M-CHAT-R model DCA and ROC - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model decision (A) and ROC (B) curves using M-CHAT-R "
+    , "based on validation set. Performances using the selected threshold are "
+    , "shown by dashed line in (A) and points in (B). ASD, autism spectrum "
+    , "disorder; M-CHAT-R, Bayley scales of ", "infant development version "
+    , "III; DT, decision tree; GBM, gradient boosting machine; RF, random "
+    , "forest; ROC, receiver operating characteristics."
+  )
+)
+```
+
+```{r M-CHAT-F model calibration - plot, include=FALSE}
+m_chat_f_calibration_plots <-
+  ggarrange(
+    eval$calibration$m_chat_f$dt$validation |>
+      arrange_calib_plot(th$m_chat_f)
+    , eval$calibration$m_chat_f$rf$validation |>
+      arrange_calib_plot(th$m_chat_f)
+    , nrow = 1, ncol = 2, widths = c(5, 5), labels = LETTERS[1:2]
+  )
+```
+
+```{r M-CHAT-F model calibration - show, echo=FALSE, fig.height=6, fig.width=10}
+m_chat_f_calibration_plots
+```
+
+```{r M-CHAT-F model calibration - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model calibration plots using M-CHAT-F based on "
+    , "validation set: (A) DT; (B) RF. Vertical dashed lines indicate the "
+    , "cost-aware threshold. ASD, autism spectrum disorder; M-CHAT-F, Bayley "
+    , "scales of infant development version III; DT, decision tree; RF, random "
+    , "forest."
+  )
+)
+```
+
+```{r M-CHAT-F model DCA and ROC - plot, include=FALSE}
+m_chat_f_dca_roc_curves <-
+  ggarrange(
+    list(
+        plot =
+          list(
+            data =
+              eval$decision$m_chat_f[
+                selected_model$well_calibrated$m_chat_f
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+        , prevalence =
+              eval$decision$m_chat_f[
+                selected_model$well_calibrated$m_chat_f
+              ] |>
+              sapply(\(x) x$validation$prevalence) |>
+              max()
+      ) |>
+      arrange_dec_plot(
+        dc_xmax = 0.25, dc_xby = 0.1
+        , dc_ymax = 0.2, dc_yby = 0.05
+        , dc_ta_angle = -50
+        , multiple = TRUE
+      ) +
+      geom_vline(xintercept = th$m_chat_f, lty = 2)
+    , list(
+        plot =
+          list(
+            data =
+              eval$discrimination$m_chat_f[
+                selected_model$well_calibrated$m_chat_f
+              ] |>
+              imap(
+                ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+              ) |>
+              reduce(rbind)
+          )
+      ) |>
+      arrange_disc_plot(multiple = TRUE) +
+      geom_point(
+        data =
+          eval$discrimination$m_chat_f[
+            selected_model$well_calibrated$m_chat_f
+          ] |>
+          imap(
+            ~ mutate(.x$validation$plot$data, model = str_to_upper(.y))
+          ) |>
+          reduce(rbind) |>
+          rename(th2 = th) |>
+          filter(th2 == th$m_chat_f)
+      )
+    , nrow = 1, ncol = 2, widths = c(5, 5), labels = LETTERS[1:2]
+  )
+```
+
+```{r M-CHAT-F model DCA and ROC - best, echo=FALSE}
+cat(
+  "Best model:"
+  , selected_model$best_f1$m_chat_f |>
+    str_to_upper()
+)
+```
+
+```{r M-CHAT-F model DCA and ROC - show, echo=FALSE, fig.height=4, fig.width=10}
+m_chat_f_dca_roc_curves
+```
+
+```{r M-CHAT-F model DCA and ROC - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction model decision (A) and ROC (B) curves using M-CHAT-F "
+    , "based on validation set. Performances using the selected threshold are "
+    , "shown by dashed line in (A) and points in (B). ASD, autism spectrum "
+    , "disorder; M-CHAT-F, Bayley scales of ", "infant development version "
+    , "III; DT, decision tree; RF, random forest; ROC, receiver operating "
+    , "characteristics."
+  )
+)
+```
+
+```{r Validation AUC-ROCs, include=FALSE}
+validation_auroc <-
+  eval$discrimination |>
+  imap(~ .x[selected_model$well_calibrated[[.y]]]) |>
+  lapply(imap, ~ mutate(.x$validation$metrics, algorithm = .y)) |>
+  lapply(reduce, rbind) |>
+  imap(~ mutate(.x, step = .y)) |>
+  reduce(rbind) |>
+  select(step, algorithm, everything()) |>
+  mutate(lb = estimate - ci, ub = estimate + ci) |>
+  mutate_at(c("estimate", "lb", "ub"), round, 3) |>
+  unite(ci, lb, ub, sep = ", ") |>
+  mutate(ci = paste0("(", ci, ")")) |>
+  unite(auc_roc, estimate, ci, sep = " ")|>
+  mutate_at(c("step", "algorithm"), \(x) factor(x, unique(x))) |>
+  spread(term, auc_roc)
+```
+
+```{r Validation confusion matrix, include=FALSE}
+validation_cm <-
+  eval$threshold |>
+  imap(~ .x[selected_model$well_calibrated[[.y]]]) |>
+  lapply(imap, ~ mutate(.x$validation, algorithm = .y)) |>
+  lapply(reduce, rbind) |>
+  imap(~ mutate(.x, step = .y)) |>
+  reduce(rbind) |>
+  select(step, algorithm, th = ref_value, everything()) |>
+  mutate(
+    avg = ifelse(metric == "f1", round(avg, 2), round(avg, 0))
+    , lb = ifelse(metric == "f1", round(lb, 2), round(lb, 0))
+    , ub = ifelse(metric == "f1", round(ub, 2), round(ub, 0))
+  ) |>
+  unite(ci, lb, ub, sep = ", ") |>
+  mutate(ci = paste0("(", ci, ")")) |>
+  unite(estimate, avg, ci, sep = " ") |>
+  select(-ref_type) |>
+  mutate_at(c("step", "algorithm"), \(x) factor(x, unique(x))) |>
+  mutate(
+    metric = factor(metric, c("nb", "f1", "tpr", "ppv", "tnr", "npv"))
+  ) |>
+  spread(metric, estimate)
+```
+
+
+```{r Validation performances - create, include=FALSE}
+validation_performance <-
+  validation_auroc |>
+  left_join(validation_cm, by = join_by(step, algorithm)) |>
+  select(-th, -nb) |>
+  mutate(
+    algorithm =
+      factor(
+        str_to_upper(algorithm)
+        , str_to_upper(algorithms$algorithm)
+      )
+  ) |>
+  mutate(
+    step =
+      ifelse(
+        step == "neonatal_risk"
+        , "Neonatal risk factors"
+        , str_to_upper(str_replace_all(step, "_", "-"))
+      )
+  ) |>
+  mutate(step = ifelse(duplicated(step), "", step))
+
+validation_performance <-
+  validation_performance |>
+  rename_if(
+    str_detect(colnames(validation_performance), "step|algorithm")
+    , str_to_sentence
+  ) |>
+  rename_if(
+    !str_detect(colnames(validation_performance), "step|algorithm")
+    , str_to_upper
+  ) |>
+  rename_all(str_remove_all, "`")
+```
+
+```{r Validation AUC-ROCs - show, echo=FALSE}
+table_n <- table_n + 1
+
+validation_performance |>
+  kable(
+    caption = paste0("Table ", table_n, ". Validation results (95% CI).")
+    , format = kable_format
+  ) |>
+  footnote(
+    paste0(
+      "AUC-ROC, area under curve of receiver operating characteristics; "
+      , "CI, confidence interval; "
+      , "F1, 2 x precision x recall / (precision + recall); "
+      , "FNR, false negative rate or specificity; "
+      , "FPR, false positive rate or sensitivity/recall; "
+      , "NPV, negative predictive value or precision; "
+      , "PPV, positive predictive value or precision; "
+      , "TNR, true negative rate or specificity; "
+      , "TPR, true positive rate or sensitivity/recall."
+    )
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(validation_auroc)), extra_css = "vertical-align:top;")
+```
+
+```{r Assess step advantages - plot, include=FALSE}
+step_advantage <-
+  validation_performance |>
+  mutate(Step = ifelse(Step == "", NA, Step)) |>
+  fill(Step, .direction = "down") |>
+  gather(metric, estimate, -Step, -Algorithm) |>
+  rename_all(str_to_lower) |>
+  separate(estimate, c("avg", "lb", "ub", "leftover"), sep = " \\(|, |\\)") |>
+  select(-leftover) |>
+  mutate_at(c("avg", "lb", "ub"), as.numeric) |>
+  inner_join(
+    selected_model$best_f1 |>
+      as.data.frame() |>
+      gather(step, algorithm) |>
+      mutate(
+        algorithm =
+          factor(
+            str_to_upper(algorithm)
+            , str_to_upper(algorithms$algorithm)
+          )
+      ) |>
+      mutate(
+        step =
+          ifelse(
+            step == "neonatal_risk"
+            , "Neonatal risk factors"
+            , str_to_upper(str_replace_all(step, "_", "-"))
+          )
+      )
+    , by = join_by(step, algorithm)
+  ) |>
+  mutate_at("step", \(x) factor(x, rev(unique(x)))) |>
+  mutate(
+    metric = factor(metric, c("AUC-ROC", "F1", "TPR", "PPV", "TNR", "NPV"))
+  ) |>
+  ggplot(aes(step, avg)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), width = 0.1) +
+  geom_point() +
+  facet_wrap(~ metric, scales = "free_x", ncol = 6) +
+  coord_flip() +
+  xlab("") +
+  ylab("Average (95% CI)")
+```
+
+```{r Assess step advantages - show, echo=FALSE, fig.height=3, fig.width=10}
+step_advantage
+```
+
+```{r Assess step advantages - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD prediction step comparison. AUC-ROC, area under curve of receiver "
+    , "operating characteristics; ASD, autism spectrum disorder; CI, "
+    , "confidence interval; F1, 2 x precision x recall / (precision + recall); "
+    , "FNR, false negative rate or specificity; FPR, false positive rate or "
+    , "sensitivity/recall; M-CHAT-F, Bayley scales of infant development "
+    , "version III; NPV, negative predictive value or precision; PPV, positive "
+    , "predictive value or precision; TNR, true negative rate or specificity; "
+    , "TPR, true positive rate or sensitivity/recall."
+  )
+)
+```
+
+

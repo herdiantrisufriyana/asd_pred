@@ -1,0 +1,49 @@
+colname,class,old_unit,new_unit
+id,character,case ID,NA
+maternal_age,numeric,媽媽年齡,NA
+mother_education_below_university,factor, 無,NA
+mother_education_below_university,factor,有,NA
+low_family_ses,factor, 無,NA
+low_family_ses,factor,有,NA
+family_social_risk_index,factor,no family social risk,NA
+family_social_risk_index,factor,only one family social risk,NA
+family_social_risk_index,factor,family social risk≥2,NA
+ga,numeric,出生週數(weeks),NA
+male,factor,Male,NA
+male,factor, female,NA
+bbw,numeric,出生體重(g),NA
+sga,factor,Small for gestational age 無,NA
+sga,factor,有,NA
+surfactant,factor,None 無用,NA
+surfactant,factor,有用,NA
+supplemental_o2_duration,numeric,住院期間氧氣使用天數,NA
+imv_duration,numeric,住院期間侵襲型呼吸器的使用天數,NA
+pda_ligation,factor,無,NA
+pda_ligation,factor, PDA ligation,NA
+sepsis,factor,無,NA
+sepsis,factor,sepsis,NA
+severe_brain_injury,factor,無,NA
+severe_brain_injury,factor,Severe brain injury,NA
+severe_nec,factor,無,NA
+severe_nec,factor,Severe NEC,NA
+surgery_of_the_abdomen,factor,無,NA
+surgery_of_the_abdomen,factor,Surgery of the abdomen,NA
+bpd,factor,無,NA
+bpd,factor,BPD,NA
+severe_rop,factor,無,NA
+severe_rop,factor,Severe ROP,NA
+delta_bw,numeric,discharge BW z score minus birth BW z score,NA
+delta_hc,numeric,discharge HC z score minus birth HC z score,NA
+hospital_stay,numeric,住院天數(天),NA
+m24_cognitive_composite_score,numeric,24 m/o Cognitive Composite Score,NA
+m24_language_composite_score,numeric,24 m/o Language Composite Score,NA
+m24_motor_composite_score,numeric,24 m/o Motor Composite Score,NA
+m24_cong_ss,numeric,24 m/o Cognitive scores,NA
+m24_rc_ss,numeric,24 m/o Receptive language scores,NA
+m24_ec_ss,numeric,24 m/o Expressive language scores,NA
+m24_fm_ss,numeric,24 m/o Fine motor scores,NA
+m24_gm_ss,numeric,24 m/o Gross motor scores,NA
+m_chat_r,numeric,M chat R score,NA
+m_chat_f,numeric,M chat F score,NA
+asd,factor,無,NA
+asd,factor,ASD,NA
