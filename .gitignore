@@ -51,5 +51,18 @@ rsconnect/
 # Ignore Rstudio project files
 *.Rproj
 
-# Ignore everything in archive
-archive/*
+# Ignore raw data
+inst/extdata/M chat/*
+
+# Ignore local file/folders
+*.Rproj
+.sh_history
+.DS_Store
+.ipynb_checkpoints/
+__pycache__/
+
+# Ignore archive
+archive*
+
+# Ignore large files (>25 MB) or abundant files
+data/correlation_matrix_ps/*
