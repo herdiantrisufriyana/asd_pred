@@ -57,10 +57,21 @@ RUN /opt/conda/bin/conda install -y scikit-learn=1.5.1
 
 # Install R packages
 RUN R -e "install.packages('BiocManager', repos='http://cran.rstudio.com/')"
-RUN R -e "BiocManager::install('tidyverse', ask=FALSE, update=FALSE, force=TRUE)"
-RUN R -e "BiocManager::install('kableExtra', ask=FALSE, update=FALSE, force=TRUE)"
-RUN R -e "BiocManager::install('ggpubr', ask=FALSE, update=FALSE, force=TRUE)"
-RUN R -e "BiocManager::install('dslabs', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('tidyverse', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('kableExtra', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('ggpubr', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('dslabs', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+
+# Install additional Python libraries and R packages, chronologically
+RUN R -e "BiocManager::install('readxl', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('MASS', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('igraph', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('ggnetwork', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('brms', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('broom.mixed', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('pbapply', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN R -e "BiocManager::install('mice', version = '3.20', ask=FALSE, update=FALSE, force=TRUE)"
+RUN /opt/conda/bin/conda install -y shap=0.42.1
 
 # Set the working directory to ~/project on R session start
 RUN echo 'setwd("~/project")' >> /home/rstudio/.Rprofile
