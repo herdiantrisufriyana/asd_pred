@@ -1,31 +1,14 @@
 shap_beeswarm_plot <-
-  function(data, samp_size = 1, shap_iqr_width = 1.5, seed, transparency = 0.5){
+  function(data, seed, scaled = TRUE, transparency = 1, barheight = 4){
     
+    if(scaled){
+      data <-
+        data |>
+        group_by(feature) |>
+        mutate(feature_value = scale(feature_value)) |>
+        ungroup() 
+    }
     set.seed(seed)
-    data <-
-      data |>
-      group_by(feature, feature_value) |>
-      filter(seq %in% sample(unique(seq), ceiling(samp_size * n()), FALSE)) |>
-      ungroup()
-    
-    data <-
-      data |>
-      filter(feature != "expected_value") |>
-      group_by(feature) |>
-      mutate(
-        feature_value = rank(feature_value)
-        , feature_value =
-          (feature_value - min(feature_value))
-          / (max(feature_value) - min(feature_value))
-      ) |>
-      ungroup() |>
-      mutate(
-        shap_iqr = quantile(shap_value, 0.75) - quantile(shap_value, 0.25)
-        , shap_lb = quantile(shap_value, 0.25) - shap_iqr_width * shap_iqr
-        , shap_ub = quantile(shap_value, 0.75) + shap_iqr_width * shap_iqr
-      ) |>
-      filter(shap_value >= shap_lb & shap_value <= shap_ub) |>
-      select(-shap_iqr, -shap_lb, -shap_ub)
     
     data <-
       data |>
@@ -42,7 +25,7 @@ shap_beeswarm_plot <-
           0.5 * direction + 0.5 * magnitude
       ) |>
       mutate(feature = reorder(feature, magnitude)) |>
-      arrange(seq, feature)|>
+      arrange(seq, feature) |>
       mutate(shap_value_bin = round(shap_value * 100, 0) / 100) |>
       group_by(feature, shap_value_bin) |>
       mutate(freq = n()) |>
@@ -54,9 +37,44 @@ shap_beeswarm_plot <-
       )
     
     data |>
-      ggplot(aes(jitter_feature, shap_value, color = feature_value)) +
+      ggplot(aes(x = jitter_feature, color = feature_value)) +
       geom_hline(yintercept = 0, color = "grey", linewidth = 1) +
-      geom_point(position = "identity", size = 1.5, alpha = transparency) +
+      geom_point(
+        aes(y = shap_value)
+        , position = "identity"
+        , size = 1.5
+        , alpha = transparency
+      ) +
+      geom_errorbar(
+        data =
+          data |>
+          mutate(
+            feature_value_cat =
+              ifelse(
+                feature_value >= mean(data$feature_value)
+                , max(data$feature_value)
+                , min(data$feature_value)
+              )
+          ) |>
+          group_by(feature_num, feature_value_cat) |>
+          summarize(
+            avg = mean(shap_value)
+            , std = sd(shap_value)
+            , .groups = "drop"
+          ) |>
+          mutate(
+            lb = avg - qnorm(0.975) * std
+            , ub = avg + qnorm(0.975) * std
+          )
+        , aes(
+            x =
+              ifelse(feature_value_cat == max(feature_value_cat), feature_num, NA)
+            , ymin = lb
+            , ymax = ub
+            , color = feature_value_cat
+          )
+        , width = 0.25, na.rm = TRUE
+      ) +
       coord_flip() +
       scale_x_continuous(
         breaks = unique(select(data, feature, feature_num))$feature_num
@@ -91,7 +109,7 @@ shap_beeswarm_plot <-
         color = 
           guide_colorbar(
             barwidth = 0.2
-            , barheight = 10
+            , barheight = barheight
             , title.position = "right"
             , title.hjust = 0.5
             , label.hjust = 0.5
