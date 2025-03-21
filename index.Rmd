@@ -2838,10 +2838,11 @@ cost_of_outcome_results <-
   select(-variable) |>
   mutate(
     step =
-      ifelse(
-        step == "neonatal_risk"
-        , "Neonatal risk factors"
-        , str_to_upper(str_replace_all(step, "_", "-"))
+      case_when(
+        step == "neonatal_risk" ~ "Universal N"
+        , step == "bsid_iii" ~ "Universal NB"
+        , step == "m_chat_r" ~ "Universal NBR"
+        , step == "m_chat_f" ~ "Universal NBF"
       )
   ) |>
   mutate_at("question", str_replace_all, "From 0 to 100, how", "How") |>
@@ -2864,6 +2865,16 @@ cost_of_outcome_results |>
     , format = kable_format
   ) |>
   kable_classic() |>
+  footnote(
+    paste0(
+      "BSID-III, Bayley scales of infant development version III; M-CHAT-F, "
+      , "modified checklist for autism in toddlers, follow-up; M-CHAT-R, "
+      , "modified checklist for autism in toddlers, revised; N, neonatal risk "
+      , "factors; NB, neonatal risk factors and BSID-III; NBR, neonatal risk "
+      , "factors, BSID-III, and M-CHAT-R; NBF, neonatal risk factors, "
+      , "BSID-III, and M-CHAT-F."
+    )
+  ) |>
   column_spec(
     seq(ncol(cost_of_outcome_results)), extra_css = "vertical-align:top;"
   )
@@ -2902,6 +2913,68 @@ eval$threshold <-
         , custom_metric = "th", custom_ref = th[[.y]]
         , seed = seed
       )
+  )
+```
+
+```{r Obtain pre-computed SHAPs of the models, include=FALSE}
+shap_values <-
+  algo_suff_sampsize |>
+  imap(
+    ~ paste0(
+        "inst/extdata/model/", .y, "/", .x, "/shap_values.csv"
+      ) |>
+      `names<-`(.x)
+  ) |>
+  lapply(lapply, read_csv, show_col_types = FALSE)
+```
+
+```{r Combine SHAP with features of the models, include=FALSE}
+shap_feature_values <-
+  shap_values |>
+  lapply(lapply, mutate, seq = seq(n())) |>
+  lapply(lapply, gather, feature, shap_value, -seq) |>
+  imap(
+    ~ .x |>
+      lapply(
+        left_join
+        , predmod_data$asd[[.y]]$train |>
+          select(-id, -outcome) |>
+          mutate(seq = seq(n())) |>
+          gather(feature, feature_value, -seq)
+        , by = join_by(seq, feature)
+      )
+  ) |>
+  imap(
+    ~ names(.x) |>
+      `names<-`(names(.x)) |>
+      lapply(
+        \(x)
+        .x[[x]] |>
+          left_join(
+            eval$df[[.y]][[x]]$train |>
+              mutate(seq = seq(n()))
+            ,by = join_by(seq)
+          )
+      )
+  )
+```
+
+```{r SHAP beeswarm plot, include=FALSE}
+shap_beeswarm_plots <-
+  shap_feature_values |>
+  lapply(
+    lapply
+    , \(x)
+      x |>
+        left_join(
+          cleaned_metadata |>
+            select(feature = colname, label = english_term) |>
+            unique()
+          , by = join_by(feature)
+        ) |>
+        mutate(feature = label) |>
+        select(-label) |>
+        shap_beeswarm_plot(seed, transparency = 1)
   )
 ```
 
@@ -2959,7 +3032,7 @@ cat(
 )
 ```
 
-```{r Neonatal risk model DCA and ROC - plot, include=FALSE}
+```{r Neo risk model DCA and ROC - plot, include=FALSE}
 neonatal_risk_dca_roc_curves <-
   ggarrange(
     list(
@@ -3016,7 +3089,7 @@ neonatal_risk_dca_roc_curves <-
   )
 ```
 
-```{r Neonatal risk model DCA and ROC - best, echo=FALSE}
+```{r Neo risk model DCA and ROC - best, echo=FALSE}
 cat(
   "Best model:"
   , selected_model$best_f1$neonatal_risk |>
@@ -3028,7 +3101,7 @@ cat(
 neonatal_risk_dca_roc_curves
 ```
 
-```{r Neonatal risk model DCA and ROC - caption, echo=FALSE}
+```{r Neo risk model DCA and ROC - caption, echo=FALSE}
 figure_n <- figure_n + 1
 cat(
   paste0(
@@ -3039,6 +3112,23 @@ cat(
     , "disorder; DNN, deep neural network; KNN, k-nearest neighbor; NB, naive "
     , "Bayes; RF, random forest; ROC, receiver operating characteristics; RR, "
     , "ridge regression."
+  )
+)
+```
+
+```{r Neo risk model SHAP - show, echo=FALSE, fig.height=1.5, fig.width=7}
+shap_beeswarm_plots$neonatal_risk[[selected_model$best_f1$neonatal_risk]]
+```
+
+```{r Neo risk model SHAP - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "SHAP beeswarm plot of best prediction model using neonatal risk "
+    , "factors. Interval estimate of SHAP values are shown for higher feature "
+    , "values (>= average). CI, confidence interval; OR, odds ratio; SHAP, "
+    , "Shapley additive explanation."
   )
 )
 ```
@@ -3158,6 +3248,24 @@ cat(
 )
 ```
 
+```{r BSID-III model SHAP - show, echo=FALSE, fig.height=2.5, fig.width=7}
+shap_beeswarm_plots$bsid_iii[[selected_model$best_f1$bsid_iii]]
+```
+
+```{r BSID-III model SHAP - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "SHAP beeswarm plot of best prediction model using BSID-III. Interval "
+    , "estimate of SHAP values are shown for higher feature values "
+    , "(>= average). BSID-III, Bayley scales of infant development version "
+    , "III; CI, confidence interval; OR, odds ratio; SHAP, Shapley additive "
+    , "explanation."
+  )
+)
+```
+
 ```{r M-CHAT-R model calibration - plot, include=FALSE}
 m_chat_r_calibration_plots <-
   ggarrange(
@@ -3183,7 +3291,7 @@ cat(
     , "ASD prediction model calibration plots using M-CHAT-R based on "
     , "validation set: (A) DT; (B) RF; and (C) GBM. Vertical dashed lines "
     , "indicate the cost-aware threshold. ASD, autism spectrum disorder; "
-    , "M-CHAT-R, Bayley scales of infant development version III; DT, "
+    , "M-CHAT-R, modified checklist for autism in toddlers, revised; DT, "
     , "decision tree; GBM, gradient boosting machine; RF, random forest."
   )
 )
@@ -3268,9 +3376,27 @@ cat(
     , "ASD prediction model decision (A) and ROC (B) curves using M-CHAT-R "
     , "based on validation set. Performances using the selected threshold are "
     , "shown by dashed line in (A) and points in (B). ASD, autism spectrum "
-    , "disorder; M-CHAT-R, Bayley scales of ", "infant development version "
-    , "III; DT, decision tree; GBM, gradient boosting machine; RF, random "
+    , "disorder; M-CHAT-R, modified checklist for autism in toddlers, revised; "
+    , "DT, decision tree; GBM, gradient boosting machine; RF, random "
     , "forest; ROC, receiver operating characteristics."
+  )
+)
+```
+
+```{r M-CHAT-R model SHAP - show, echo=FALSE, fig.height=2.5, fig.width=7}
+shap_beeswarm_plots$m_chat_r[[selected_model$best_f1$m_chat_r]]
+```
+
+```{r M-CHAT-R model SHAP - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "SHAP beeswarm plot of best prediction model using M-CHAT-R. Interval "
+    , "estimate of SHAP values are shown for higher feature values "
+    , "(>= average). CI, confidence interval; M-CHAT-R, modified checklist for "
+    , "autism in toddlers, revised; OR, odds ratio; SHAP, Shapley additive "
+    , "explanation."
   )
 )
 ```
@@ -3297,9 +3423,9 @@ cat(
     "Figure ", figure_n,". "
     , "ASD prediction model calibration plots using M-CHAT-F based on "
     , "validation set: (A) DT; (B) RF. Vertical dashed lines indicate the "
-    , "cost-aware threshold. ASD, autism spectrum disorder; M-CHAT-F, Bayley "
-    , "scales of infant development version III; DT, decision tree; RF, random "
-    , "forest."
+    , "cost-aware threshold. ASD, autism spectrum disorder; M-CHAT-F, modified "
+    , "checklist for autism in toddlers, follow-up; DT, decision tree; RF, "
+    , "random forest."
   )
 )
 ```
@@ -3383,9 +3509,27 @@ cat(
     , "ASD prediction model decision (A) and ROC (B) curves using M-CHAT-F "
     , "based on validation set. Performances using the selected threshold are "
     , "shown by dashed line in (A) and points in (B). ASD, autism spectrum "
-    , "disorder; M-CHAT-F, Bayley scales of ", "infant development version "
-    , "III; DT, decision tree; RF, random forest; ROC, receiver operating "
-    , "characteristics."
+    , "disorder; M-CHAT-F, modified checklist for autism in toddlers, "
+    , "follow-up; DT, decision tree; RF, random forest; ROC, receiver "
+    , "operating characteristics."
+  )
+)
+```
+
+```{r M-CHAT-F model SHAP - show, echo=FALSE, fig.height=2.5, fig.width=7}
+shap_beeswarm_plots$m_chat_f[[selected_model$best_f1$m_chat_f]]
+```
+
+```{r M-CHAT-F model SHAP - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "SHAP beeswarm plot of best prediction model using M-CHAT-F. Interval "
+    , "estimate of SHAP values are shown for higher feature values "
+    , "(>= average). CI, confidence interval; M-CHAT-F, modified checklist for "
+    , "autism in toddlers, follow-up; OR, odds ratio; SHAP, Shapley additive "
+    , "explanation."
   )
 )
 ```
@@ -3433,7 +3577,6 @@ validation_cm <-
   spread(metric, estimate)
 ```
 
-
 ```{r Validation performances - create, include=FALSE}
 validation_performance <-
   validation_auroc |>
@@ -3448,10 +3591,11 @@ validation_performance <-
   ) |>
   mutate(
     step =
-      ifelse(
-        step == "neonatal_risk"
-        , "Neonatal risk factors"
-        , str_to_upper(str_replace_all(step, "_", "-"))
+      case_when(
+        step == "neonatal_risk" ~ "Universal N"
+        , step == "bsid_iii" ~ "Universal NB"
+        , step == "m_chat_r" ~ "Universal NBR"
+        , step == "m_chat_f" ~ "Universal NBF"
       )
   ) |>
   mutate(step = ifelse(duplicated(step), "", step))
@@ -3469,7 +3613,7 @@ validation_performance <-
   rename_all(str_remove_all, "`")
 ```
 
-```{r Validation AUC-ROCs - show, echo=FALSE}
+```{r Validation performances - show, echo=FALSE}
 table_n <- table_n + 1
 
 validation_performance |>
@@ -3480,10 +3624,17 @@ validation_performance |>
   footnote(
     paste0(
       "AUC-ROC, area under curve of receiver operating characteristics; "
+      , "BSID-III, Bayley scales of infant development version III; "
       , "CI, confidence interval; "
       , "F1, 2 x precision x recall / (precision + recall); "
       , "FNR, false negative rate or specificity; "
       , "FPR, false positive rate or sensitivity/recall; "
+      , "M-CHAT-F, modified checklist for autism in toddlers, follow-up; "
+      , "M-CHAT-R, modified checklist for autism in toddlers, revised; "
+      , "N, neonatal risk factors; "
+      , "NB, neonatal risk factors and BSID-III; "
+      , "NBR, neonatal risk factors, BSID-III, and M-CHAT-R; "
+      , "NBF, neonatal risk factors, BSID-III, and M-CHAT-F; "
       , "NPV, negative predictive value or precision; "
       , "PPV, positive predictive value or precision; "
       , "TNR, true negative rate or specificity; "
@@ -3517,10 +3668,11 @@ step_advantage <-
       ) |>
       mutate(
         step =
-          ifelse(
-            step == "neonatal_risk"
-            , "Neonatal risk factors"
-            , str_to_upper(str_replace_all(step, "_", "-"))
+          case_when(
+            step == "neonatal_risk" ~ "Universal N"
+            , step == "bsid_iii" ~ "Universal NB"
+            , step == "m_chat_r" ~ "Universal NBR"
+            , step == "m_chat_f" ~ "Universal NBF"
           )
       )
     , by = join_by(step, algorithm)
@@ -3548,15 +3700,1054 @@ cat(
   paste0(
     "Figure ", figure_n,". "
     , "ASD prediction step comparison. AUC-ROC, area under curve of receiver "
-    , "operating characteristics; ASD, autism spectrum disorder; CI, "
+    , "operating characteristics; ASD, autism spectrum disorder; BSID-III, "
+    , "Bayley scales of infant development version III; CI, "
     , "confidence interval; F1, 2 x precision x recall / (precision + recall); "
     , "FNR, false negative rate or specificity; FPR, false positive rate or "
-    , "sensitivity/recall; M-CHAT-F, Bayley scales of infant development "
-    , "version III; NPV, negative predictive value or precision; PPV, positive "
-    , "predictive value or precision; TNR, true negative rate or specificity; "
-    , "TPR, true positive rate or sensitivity/recall."
+    , "sensitivity/recall; M-CHAT-F, modified checklist for autism in "
+    , "toddlers, follow-up; M-CHAT-R, modified checklist for autism in "
+    , "toddlers, revised; N, neonatal risk factors; NB, neonatal risk factors "
+    , "and BSID-III; NBR, neonatal risk factors, BSID-III, and M-CHAT-R; NBF, "
+    , "neonatal risk factors, BSID-III, and M-CHAT-F; NPV, negative predictive "
+    , "value or precision; PPV, positive predictive value or precision; TNR, "
+    , "true negative rate or specificity; TPR, true positive rate or "
+    , "sensitivity/recall."
   )
 )
 ```
+
+# Predictive modeling 2
+
+```{r Combine probabilities from all the steps, include=FALSE}
+comb_step_prob <-
+  names(eval$df[[1]][[1]]) |>
+  `names<-`(names(eval$df[[1]][[1]])) |>
+  lapply(\(x) imap(eval$df, ~ .x[[selected_model$best_f1[[.y]]]][[x]])) |>
+  lapply(\(x) imap(x, ~ rename_at(.x, "pred", \(x) .y))) |>
+  lapply(reduce, left_join, by = join_by(id, obs))
+```
+
+```{r Obtain prediction from all the steps, include=FALSE}
+comb_step_pred <-
+  comb_step_prob |>
+  lapply(gather, step, prob, -id, -obs) |>
+  lapply(mutate_at, c("id", "step"), \(x) factor(x, unique(x))) |>
+  lapply(
+    mutate
+    , th = sapply(step, \(x) th[[x]])
+    , pred =
+      factor(
+        ifelse(prob >= th, levels(obs)[2], levels(obs)[1])
+        , levels(obs)
+      )
+  ) |>
+  lapply(select, -prob, -th) |>
+  lapply(spread, step, pred) |>
+  lapply(arrange, id) |>
+  lapply(mutate_at, "id", as.character) |>
+  lapply(mutate_at, "id", as.numeric)
+```
+
+```{r Define protocol for combining models, include=FALSE}
+comb_model_protocol <-
+  list(
+    expand.grid(step1 = paste0("m_chat_r=", 0:1), step2 = "m_chat_f")
+    , expand.grid(
+        step1 = paste0("bsid_iii=", 0:1)
+        , step2 = paste0("m_chat_r=", 0:1)
+        , step3 = "m_chat_f"
+      )
+    , expand.grid(
+        step1 = paste0("neonatal_risk=", 0:1)
+        , step2 = paste0("bsid_iii=", 0:1)
+        , step3 = paste0("m_chat_r=", 0:1)
+        , step4 = "m_chat_f"
+      )
+    , expand.grid(step1 = paste0("bsid_iii=", 0:1), step2 = "m_chat_r")
+    , expand.grid(
+        step1 = paste0("neonatal_risk=", 0:1)
+        , step2 = paste0("bsid_iii=", 0:1)
+        , step3 = "m_chat_r"
+      )
+    , expand.grid(step1 = paste0("neonatal_risk=", 0:1), step2 = "bsid_iii")
+  )
+
+comb_model_protocol <-
+  comb_model_protocol |>
+  `names<-`(seq(length(comb_model_protocol))) |>
+  imap(~ mutate(.x, type = .y)) |>
+  lapply(mutate, model = seq(n())) |>
+  lapply(mutate_all, as.character) |>
+  lapply(gather, step, value, -type, -model) |>
+  lapply(mutate, step = as.numeric(str_remove_all(step, "step"))) |>
+  lapply(mutate, max_step = max(step)) |>
+  reduce(rbind) |>
+  select(type, max_step, everything())
+
+comb_model_protocol <-
+  comb_model_protocol |>
+  left_join(
+    comb_model_protocol |>
+      select(type, max_step, model) |>
+      unique() |>
+      mutate(model2 = seq(n()))
+    , by = join_by(type, max_step, model)
+  ) |>
+  mutate(model = model2) |>
+  select(-type, -max_step, -model2) |>
+  arrange(model)
+
+comb_model_protocol <-
+  comb_model_protocol |>
+  left_join(
+    comb_model_protocol |>
+      mutate(
+        name =
+          value |>
+          str_replace_all("neonatal_risk", "N") |>
+          str_replace_all("bsid_iii", "NB") |>
+          str_replace_all("m_chat_r", "NBR") |>
+          str_replace_all("m_chat_f", "NBF") |>
+          str_remove_all("\\=")
+      ) |>
+      group_by(model) |>
+      summarize(name = paste0(name, collapse = "-"))
+    , by = join_by(model)
+  ) |>
+  mutate(model = name) |>
+  select(-name)
+```
+
+```{r Obtain prediction for each combined model, include=FALSE}
+comb_model <-
+  comb_step_pred |>
+  lapply(obtain_obs_pred_comb, comb_model_protocol)
+
+comb_model <-
+  names(comb_model[[1]]) |>
+  `names<-`(names(comb_model[[1]])) |>
+  lapply(
+    \(x)
+    names(comb_model) |>
+      `names<-`(names(comb_model)) |>
+      lapply(
+        \(y)
+        comb_model[[y]][[x]]
+      )
+  )
+```
+
+```{r Prediction by either M-CHAT-R or M-CHAT-F only, include=FALSE}
+m_chat_pred <-
+  predmod_data$asd[c("m_chat_r", "m_chat_f")] |>
+  imap(~ lapply(.x, select_at, c("id", "outcome", .y))) |>
+  lapply(lapply, `colnames<-`, c("id", "obs", "pred")) |>
+  lapply(lapply, mutate_at, "id", as.numeric) |>
+  imap(~ lapply(.x, mutate, th = ifelse(.y == "m_chat_r", 3, 2))) |>
+  lapply(lapply, mutate, pred = as.integer(pred >= th)) |>
+  lapply(lapply, select, -th) |>
+  lapply(lapply, mutate_at, c("obs", "pred"), as.factor)
+
+m_chat_pred <- `names<-`(m_chat_pred, paste0("single_", names(m_chat_pred)))
+```
+
+# Model evaluation 2
+
+```{r Create empty list for model evaluation 2, include=FALSE}
+eval2 <- list()
+```
+
+```{r Obtain the model evaluation 2 data, include=FALSE}
+eval2$df <-
+  comb_model |>
+  lapply(lapply, select, -step) |>
+  c(m_chat_pred)
+```
+
+```{r Obtain the model evaluation 2 confusion matrix, include=FALSE}
+eval2$threshold <-
+  eval2$df |>
+  lapply(lapply, select, -id) |>
+  lapply(lapply, mutate, pred = as.numeric(as.character(pred))) |>
+  pblapply(
+    lapply
+    , thresholding
+    , standard = FALSE, optimal = FALSE, clinical = FALSE
+    , custom_metric = "th", custom_ref = 1
+    , seed = seed
+  )
+```
+
+```{r Validation 2 confusion matrix, include=FALSE}
+validation2_cm <-
+  eval2$threshold |>
+  imap(
+    ~ .x$validation |>
+      mutate(
+        step = .y
+        , algorithm = ifelse(str_detect(.y, "^single"), "none", "mixed")
+      )
+  ) |>
+  reduce(rbind) |>
+  select(step, algorithm, th = ref_value, everything()) |>
+  mutate(th = NA) |>
+  mutate(
+    avg = ifelse(metric == "f1", round(avg, 2), round(avg, 0))
+    , lb = ifelse(metric == "f1", round(lb, 2), round(lb, 0))
+    , ub = ifelse(metric == "f1", round(ub, 2), round(ub, 0))
+  ) |>
+  unite(ci, lb, ub, sep = ", ") |>
+  mutate(ci = paste0("(", ci, ")")) |>
+  unite(estimate, avg, ci, sep = " ") |>
+  select(-ref_type) |>
+  mutate_at(c("step", "algorithm"), \(x) factor(x, unique(x))) |>
+  mutate(
+    metric = factor(metric, c("nb", "f1", "tpr", "ppv", "tnr", "npv"))
+  ) |>
+  spread(metric, estimate)
+```
+
+```{r Validation 2 performances - create, include=FALSE}
+validation2_performance <-
+  validation2_cm |>
+  select(-th, -nb) |>
+  mutate(
+    algorithm =
+      factor(
+        str_to_sentence(algorithm)
+        , c(
+            str_to_upper(algorithms$algorithm)
+            , str_to_sentence(unique(algorithm))
+          )
+      )
+  ) |>
+  mutate_at("step", as.character) |>
+  mutate(
+    step =
+      ifelse(
+        str_detect(step, "^single_")
+        , str_to_upper(str_replace_all(step, "_", "-")) |>
+          str_replace_all("SINGLE-M-CHAT-", "Universal ")
+        , step
+      )
+  ) |>
+  mutate(step = ifelse(duplicated(step), "", step))
+
+validation2_performance <-
+  validation2_performance |>
+  rename_if(
+    str_detect(colnames(validation2_performance), "step|algorithm")
+    , str_to_sentence
+  ) |>
+  rename_if(
+    !str_detect(colnames(validation2_performance), "step|algorithm")
+    , str_to_upper
+  ) |>
+  rename_all(str_remove_all, "`")
+```
+
+```{r Validation 2 performance - show, echo=FALSE}
+table_n <- table_n + 1
+
+validation2_performance |>
+  kable(
+    caption = paste0("Table ", table_n, ". Validation 2 results (95% CI).")
+    , format = kable_format
+  ) |>
+  footnote(
+    paste0(
+      "BSID-III, Bayley scales of infant development version III; "
+      , "CI, confidence interval; "
+      , "F, M-CHAT-F; "
+      , "F1, 2 x precision x recall / (precision + recall); "
+      , "FNR, false negative rate or specificity; "
+      , "FPR, false positive rate or sensitivity/recall; "
+      , "M-CHAT-F, modified checklist for autism in toddlers, follow-up; "
+      , "M-CHAT-R, modified checklist for autism in toddlers, revised; "
+      , "N, neonatal risk factors; "
+      , "NB, neonatal risk factors and BSID-III; "
+      , "NBR, neonatal risk factors, BSID-III, and M-CHAT-R; "
+      , "NBF, neonatal risk factors, BSID-III, and M-CHAT-F; "
+      , "NPV, negative predictive value or precision; "
+      , "PPV, positive predictive value or precision; "
+      , "R, M-CHAT-R; "
+      , "TNR, true negative rate or specificity; "
+      , "TPR, true positive rate or sensitivity/recall."
+    )
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(validation_auroc)), extra_css = "vertical-align:top;")
+```
+
+```{r Compute cost of step using study data, include=FALSE}
+cost_of_step_data <-
+  eval$df |>
+  imap(~ .x[[selected_model$best_f1[[.y]]]]) |>
+  imap(~ lapply(.x, mutate, pred = factor(as.integer(pred >= th[[.y]])))) |>
+  lapply(
+    lapply
+    , mutate
+    , variable =
+      case_when(
+        obs  ==  levels(obs)[2] & pred == levels(obs)[2] ~ "CTP"
+        , obs == levels(obs)[2] & pred == levels(obs)[1] ~ "CFN"
+        , obs == levels(obs)[1] & pred == levels(obs)[2] ~ "CFP"
+        , obs == levels(obs)[1] & pred == levels(obs)[1] ~ "CTN"
+      )
+  ) |>
+  imap(~ lapply(.x, mutate, step = .y)) |>
+  lapply(
+    lapply
+    , left_join
+    , select(cost_of_outcome, step, variable, cost = answer)
+    , by = join_by(step, variable)
+  ) |>
+  lapply(lapply, group_by, variable) |>
+  lapply(lapply, summarize, n = n(), cost = sum(cost)) |>
+  lapply(lapply, mutate, p = n / sum(n)) |>
+  imap(~ lapply(.x, mutate, step = .y)) |>
+  lapply(lapply, select, step, everything())
+```
+
+```{r Compute cost of comb using study data, include=FALSE}
+cost_of_comb_data <-
+  comb_model |>
+  lapply(
+    lapply
+    , mutate
+    , variable =
+      case_when(
+        obs  ==  levels(obs)[2] & pred == levels(obs)[2] ~ "CTP"
+        , obs == levels(obs)[2] & pred == levels(obs)[1] ~ "CFN"
+        , obs == levels(obs)[1] & pred == levels(obs)[2] ~ "CFP"
+        , obs == levels(obs)[1] & pred == levels(obs)[1] ~ "CTN"
+      )
+  ) |>
+  lapply(
+    lapply
+    , mutate_at
+    , "step"
+    , \(x) ifelse(str_detect(x, "\\="), x, paste0(x, "="))
+  ) |>
+  lapply(lapply, separate, step, c("step", "pred"), sep = "\\=") |>
+  lapply(
+    lapply
+    , left_join
+    , select(cost_of_outcome, step, variable, cost = answer)
+    , by = join_by(step, variable)
+  ) |>
+  lapply(lapply, group_by, variable) |>
+  lapply(lapply, summarize, n = n(), cost = sum(cost)) |>
+  lapply(lapply, mutate, p = n / sum(n)) |>
+  imap(~ lapply(.x, mutate, step = .y)) |>
+  lapply(lapply, select, step, everything())
+```
+
+```{r Compute cost of single M-CHAT-R/F using study data, include=FALSE}
+cost_of_single_m_chat_data <-
+  m_chat_pred |>
+  lapply(
+    lapply
+    , mutate
+    , variable =
+      case_when(
+        obs  ==  levels(obs)[2] & pred == levels(obs)[2] ~ "CTP"
+        , obs == levels(obs)[2] & pred == levels(obs)[1] ~ "CFN"
+        , obs == levels(obs)[1] & pred == levels(obs)[2] ~ "CFP"
+        , obs == levels(obs)[1] & pred == levels(obs)[1] ~ "CTN"
+      )
+  ) |>
+  imap(~ lapply(.x, mutate, step = str_remove_all(.y, "^single_"))) |>
+  lapply(
+    lapply
+    , left_join
+    , select(cost_of_outcome, step, variable, cost = answer)
+    , by = join_by(step, variable)
+  ) |>
+  lapply(lapply, group_by, variable) |>
+  lapply(lapply, summarize, n = n(), cost = sum(cost)) |>
+  lapply(lapply, mutate, p = n / sum(n)) |>
+  imap(~ lapply(.x, mutate, step = .y)) |>
+  lapply(lapply, select, step, everything())
+```
+
+```{r Compute weighted total cost of comb using study data, include=FALSE}
+cost_of_pred_data <-
+  cost_of_step_data |>
+  c(cost_of_comb_data) |>
+  c(cost_of_single_m_chat_data)
+
+cost_of_pred_data <-
+  names(cost_of_pred_data[[1]]) |>
+  `names<-`(names(cost_of_pred_data[[1]])) |>
+  lapply(
+    \(x)
+    names(cost_of_pred_data) |>
+      `names<-`(names(cost_of_pred_data)) |>
+      lapply(
+        \(y)
+        cost_of_pred_data[[y]][[x]]
+      )
+  ) |>
+  lapply(reduce, rbind) |>
+  lapply(mutate_at, "step", \(x) factor(x, unique(x))) |>
+  lapply(group_by, step) |>
+  lapply(summarize, avg_cost = sum(cost) / sum(n))
+```
+
+```{r Assess comb advantages - performance, include=FALSE}
+comb_advantage_performance <-
+  validation_performance |>
+  mutate(Step = ifelse(Step == "", NA, Step)) |>
+  fill(Step, .direction = "down") |>
+  inner_join(
+    selected_model$best_f1 |>
+      as.data.frame() |>
+      gather(step, algorithm) |>
+      mutate(
+        algorithm =
+          factor(
+            str_to_upper(algorithm)
+            , str_to_upper(algorithms$algorithm)
+          )
+      ) |>
+      mutate(
+        step =
+          case_when(
+            step == "neonatal_risk" ~ "Universal N"
+            , step == "bsid_iii" ~ "Universal NB"
+            , step == "m_chat_r" ~ "Universal NBR"
+            , step == "m_chat_f" ~ "Universal NBF"
+          )
+      ) |>
+      rename_at(c("step", "algorithm"), str_to_sentence)
+    , by = join_by(Step, Algorithm)
+  ) |>
+  select(-`AUC-ROC`) |>
+  rbind(validation2_performance) |>
+  gather(metric, estimate, -Step, -Algorithm) |>
+  rename_all(str_to_lower) |>
+  separate(estimate, c("avg", "lb", "ub", "leftover"), sep = " \\(|, |\\)") |>
+  select(-leftover) |>
+  mutate_at(c("avg", "lb", "ub"), as.numeric) |>
+  mutate_at("step", \(x) factor(x, rev(unique(x)))) |>
+  mutate(
+    metric = factor(metric, c("AUC-ROC", "F1", "TPR", "PPV", "TNR", "NPV"))
+  )
+```
+
+```{r Assess comb advantages - cost, include=FALSE}
+comb_advantage_cost <-
+  cost_of_pred_data$validation |>
+  mutate(
+    step =
+      case_when(
+        step == "neonatal_risk" ~ "Universal N"
+        , step == "bsid_iii" ~ "Universal NB"
+        , step == "m_chat_r" ~ "Universal NBR"
+        , step == "m_chat_f" ~ "Universal NBF"
+        , step == "single_m_chat_r" ~ "Universal R"
+        , step == "single_m_chat_f" ~ "Universal F"
+        , TRUE ~ step
+      )
+  ) |>
+  left_join(
+    select(comb_advantage_performance, step, algorithm)
+    , by = join_by(step)
+  ) |>
+  mutate(metric = "Avg. cost", avg = avg_cost, lb = NA, ub = NA) |>
+  select(-avg_cost)
+```
+
+```{r Assess comb advantages - plot, include=FALSE}
+comb_advantage <-
+  comb_advantage_performance |>
+  rbind(comb_advantage_cost) |>
+  left_join(
+    comb_model_protocol |>
+      group_by(model) |>
+      filter(step == max(step)) |>
+      ungroup() |>
+      select(step = model, max_step = value) |>
+      mutate(
+        max_step =
+          case_when(
+            max_step == "neonatal_risk" ~ "N"
+            , max_step == "bsid_iii" ~ "NB"
+            , max_step == "m_chat_r" ~ "NBR"
+            , max_step == "m_chat_f" ~ "NBF"
+          )
+      )
+    , by = join_by(step)
+  ) |>
+  mutate(
+    max_step =
+      ifelse(is.na(max_step), str_remove_all(step, "Universal "), max_step)
+  ) |>
+  mutate(max_step = factor(max_step, unique(max_step))) |>
+  mutate_at("step", \(x) factor(x, rev(unique(x)))) |>
+  ggplot(aes(step, avg, color = max_step)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), width = 0.1) +
+  geom_point() +
+  facet_grid(~ metric, scales = "free", space = "free_y") +
+  coord_flip() +
+  xlab("") +
+  ylab("Average (95% CI)") +
+  scale_color_discrete("Last step") +
+  theme(
+    strip.text.y.right = element_text(angle = 0)
+  )
+```
+
+```{r Assess comb advantages - show, echo=FALSE, fig.height=4.5, fig.width=10}
+comb_advantage
+```
+
+```{r Assess comb advantages - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "ASD combined prediction comparison. ASD, autism spectrum disorder; CI, "
+    , "confidence interval; Avg., average; BSID-III, Bayley scales of infant "
+    , "development version III; CI, confidence interval; F, M-CHAT-F, F1, 2 x "
+    , "precision x recall / (precision + recall); FNR, false negative rate or "
+    , "specificity; FPR, false positive rate or sensitivity/recall; M-CHAT-F, "
+    , "modified checklist for autism in toddlers, follow-up; M-CHAT-R, "
+    , "modified checklist for autism in toddlers, revised; N, neonatal risk "
+    , "factors; NB, neonatal risk factors and BSID-III; NBR, neonatal risk "
+    , "factors, BSID-III, and M-CHAT-R; NBF, neonatal risk factors, BSID-III, "
+    , "and M-CHAT-F; NPV, negative predictive value or precision; PPV, "
+    , "positive predictive value or precision; R, M-CHAT-R; TNR, true negative "
+    , "rate or specificity; TPR, true positive rate or sensitivity/recall."
+  )
+)
+```
+
+```{r Select best combination, include=FALSE}
+selected_comb <- c("N0-NB0-NBR0-NBF", "N0-NB0-NBR")
+```
+
+```{r Test AUC-ROCs, include=FALSE}
+test_auroc <-
+  eval$discrimination |>
+  imap(~ .x[selected_model$well_calibrated[[.y]]]) |>
+  lapply(imap, ~ mutate(.x$test$metrics, algorithm = .y)) |>
+  lapply(reduce, rbind) |>
+  imap(~ mutate(.x, step = .y)) |>
+  reduce(rbind) |>
+  select(step, algorithm, everything()) |>
+  mutate(lb = estimate - ci, ub = estimate + ci) |>
+  mutate_at(c("estimate", "lb", "ub"), round, 3) |>
+  unite(ci, lb, ub, sep = ", ") |>
+  mutate(ci = paste0("(", ci, ")")) |>
+  unite(auc_roc, estimate, ci, sep = " ")|>
+  mutate_at(c("step", "algorithm"), \(x) factor(x, unique(x))) |>
+  spread(term, auc_roc)
+```
+
+```{r Test confusion matrix, include=FALSE}
+test_cm <-
+  eval$threshold |>
+  imap(~ .x[selected_model$well_calibrated[[.y]]]) |>
+  lapply(imap, ~ mutate(.x$test, algorithm = .y)) |>
+  lapply(reduce, rbind) |>
+  imap(~ mutate(.x, step = .y)) |>
+  reduce(rbind) |>
+  select(step, algorithm, th = ref_value, everything()) |>
+  mutate(
+    avg = ifelse(metric == "f1", round(avg, 2), round(avg, 0))
+    , lb = ifelse(metric == "f1", round(lb, 2), round(lb, 0))
+    , ub = ifelse(metric == "f1", round(ub, 2), round(ub, 0))
+  ) |>
+  unite(ci, lb, ub, sep = ", ") |>
+  mutate(ci = paste0("(", ci, ")")) |>
+  unite(estimate, avg, ci, sep = " ") |>
+  select(-ref_type) |>
+  mutate_at(c("step", "algorithm"), \(x) factor(x, unique(x))) |>
+  mutate(
+    metric = factor(metric, c("nb", "f1", "tpr", "ppv", "tnr", "npv"))
+  ) |>
+  spread(metric, estimate)
+```
+
+```{r Test performances - create, include=FALSE}
+test_performance <-
+  test_auroc |>
+  left_join(test_cm, by = join_by(step, algorithm)) |>
+  select(-th, -nb) |>
+  mutate(
+    algorithm =
+      factor(
+        str_to_upper(algorithm)
+        , str_to_upper(algorithms$algorithm)
+      )
+  ) |>
+  mutate(
+    step =
+      case_when(
+        step == "neonatal_risk" ~ "Universal N"
+        , step == "bsid_iii" ~ "Universal NB"
+        , step == "m_chat_r" ~ "Universal NBR"
+        , step == "m_chat_f" ~ "Universal NBF"
+      )
+  ) |>
+  mutate(step = ifelse(duplicated(step), "", step))
+
+test_performance <-
+  test_performance |>
+  rename_if(
+    str_detect(colnames(test_performance), "step|algorithm")
+    , str_to_sentence
+  ) |>
+  rename_if(
+    !str_detect(colnames(test_performance), "step|algorithm")
+    , str_to_upper
+  ) |>
+  rename_all(str_remove_all, "`")
+```
+
+```{r Test 2 confusion matrix, include=FALSE}
+test2_cm <-
+  eval2$threshold |>
+  imap(
+    ~ .x$test |>
+      mutate(
+        step = .y
+        , algorithm = ifelse(str_detect(.y, "^single"), "none", "mixed")
+      )
+  ) |>
+  reduce(rbind) |>
+  select(step, algorithm, th = ref_value, everything()) |>
+  mutate(th = NA) |>
+  mutate(
+    avg = ifelse(metric == "f1", round(avg, 2), round(avg, 0))
+    , lb = ifelse(metric == "f1", round(lb, 2), round(lb, 0))
+    , ub = ifelse(metric == "f1", round(ub, 2), round(ub, 0))
+  ) |>
+  unite(ci, lb, ub, sep = ", ") |>
+  mutate(ci = paste0("(", ci, ")")) |>
+  unite(estimate, avg, ci, sep = " ") |>
+  select(-ref_type) |>
+  mutate_at(c("step", "algorithm"), \(x) factor(x, unique(x))) |>
+  mutate(
+    metric = factor(metric, c("nb", "f1", "tpr", "ppv", "tnr", "npv"))
+  ) |>
+  spread(metric, estimate)
+```
+
+```{r Test 2 performances - create, include=FALSE}
+test2_performance <-
+  test2_cm |>
+  select(-th, -nb) |>
+  mutate(
+    algorithm =
+      factor(
+        str_to_sentence(algorithm)
+        , c(
+            str_to_upper(algorithms$algorithm)
+            , str_to_sentence(unique(algorithm))
+          )
+      )
+  ) |>
+  mutate_at("step", as.character) |>
+  mutate(
+    step =
+      ifelse(
+        str_detect(step, "^single_")
+        , str_to_upper(str_replace_all(step, "_", "-")) |>
+          str_replace_all("SINGLE-M-CHAT-", "Universal ")
+        , step
+      )
+  ) |>
+  mutate(step = ifelse(duplicated(step), "", step))
+
+test2_performance <-
+  test2_performance |>
+  rename_if(
+    str_detect(colnames(test2_performance), "step|algorithm")
+    , str_to_sentence
+  ) |>
+  rename_if(
+    !str_detect(colnames(test2_performance), "step|algorithm")
+    , str_to_upper
+  ) |>
+  rename_all(str_remove_all, "`")
+```
+
+```{r Combine validation and test performance, include=FALSE}
+eval_performance <-
+  validation_performance |>
+  filter(Step != "") |>
+  select(-`AUC-ROC`) |>
+  rbind(
+    validation2_performance |>
+      filter(Step %in% c(selected_comb, "Universal R", "Universal F"))
+  ) |>
+  mutate(Set = "Validation") |>
+  rbind(
+    test_performance |>
+      filter(Step != "") |>
+      select(-`AUC-ROC`) |>
+      rbind(
+        test2_performance |>
+          filter(Step %in% c(selected_comb, "Universal R", "Universal F"))
+      ) |>
+      mutate(Set = "Test")
+  )
+```
+
+```{r Test performance - show, echo=FALSE}
+table_n <- table_n + 1
+
+eval_performance |>
+  filter(Set == "Test") |>
+  select(-Set) |>
+  kable(
+    caption = paste0("Table ", table_n, ". Test results (95% CI).")
+    , format = kable_format
+  ) |>
+  footnote(
+    paste0(
+      "BSID-III, Bayley scales of infant development version III; "
+      , "CI, confidence interval; "
+      , "F, M-CHAT-F; "
+      , "F1, 2 x precision x recall / (precision + recall); "
+      , "FNR, false negative rate or specificity; "
+      , "FPR, false positive rate or sensitivity/recall; "
+      , "M-CHAT-F, modified checklist for autism in toddlers, follow-up; "
+      , "M-CHAT-R, modified checklist for autism in toddlers, revised; "
+      , "N, neonatal risk factors; "
+      , "NB, neonatal risk factors and BSID-III; "
+      , "NBR, neonatal risk factors, BSID-III, and M-CHAT-R; "
+      , "NBF, neonatal risk factors, BSID-III, and M-CHAT-F; "
+      , "NPV, negative predictive value or precision; "
+      , "PPV, positive predictive value or precision; "
+      , "R, M-CHAT-R; "
+      , "TNR, true negative rate or specificity; "
+      , "TPR, true positive rate or sensitivity/recall."
+    )
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(validation_auroc)), extra_css = "vertical-align:top;")
+```
+
+```{r Val-test diff in perform - create, include=FALSE}
+diff_eval_performance <-
+  eval_performance |>
+  gather(metric, estimate, -Step, -Algorithm, -Set) |>
+  filter(metric != "F1") |>
+  rename_all(str_to_lower) |>
+  separate(estimate, c("avg", "lb", "ub", "leftover"), sep = " \\(|, |\\)") |>
+  select(-leftover) |>
+  mutate_at(c("avg", "lb", "ub"), as.numeric) |>
+  mutate(
+    metric = factor(metric, c("F1", "TPR", "PPV", "TNR", "NPV"))
+  ) |>
+  mutate_at("set", \(x) factor(x, unique(x))) |>
+  mutate_at("step", \(x) factor(x, rev(unique(x)))) |>
+  ggplot(aes(step, avg, color = set)) +
+  geom_errorbar(aes(ymin = lb, ymax = ub), width = 0.1) +
+  geom_point() +
+  facet_grid(~ metric, scales = "free", space = "free_y") +
+  coord_flip() +
+  xlab("") +
+  scale_y_continuous(
+    "Average (95% CI)", limits = c(0, 100), breaks = seq(0, 100, 10)
+  ) +
+  scale_color_discrete("Set") +
+  theme(
+    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+    , strip.text.y.right = element_text(angle = 0)
+  )
+```
+
+```{r Val-test diff in perform - show, echo=FALSE, fig.height=2.5, fig.width=10}
+diff_eval_performance
+```
+
+# Model deployment
+
+```{r Compute prevalence for observation and prediction, include=FALSE}
+prevalence_obs_pred_step <-
+  comb_step_pred |>
+  lapply(gather, variable, value, -id) |>
+  lapply(mutate_at, c("id", "variable"), \(x) factor(x, unique(x))) |>
+  lapply(mutate_at, "value", factor) |>
+  lapply(group_by, variable, value) |>
+  lapply(summarize, n = n(), .groups = "drop") |>
+  lapply(group_by, variable) |>
+  lapply(mutate, total = sum(n)) |>
+  lapply(ungroup) |>
+  lapply(mutate, p = n / total) |>
+  lapply(mutate, step = "universal") |>
+  lapply(select, step, everything())
+```
+
+```{r Compute prevalence for prediction by combination, include=FALSE}
+prevalence_pred_comb <-
+  comb_model[selected_comb] |>
+  lapply(lapply, select, -obs) |>
+  lapply(lapply, gather, variable, value, -id, -step) |>
+  lapply(lapply, mutate_at, c("id", "step"), \(x) factor(x, unique(x))) |>
+  lapply(lapply, mutate_at, "value", factor) |>
+  lapply(lapply, group_by, step, variable, value) |>
+  lapply(lapply, summarize, n = n(), .groups = "drop") |>
+  lapply(lapply, group_by, variable) |>
+  lapply(lapply, mutate, total = sum(n)) |>
+  lapply(lapply, ungroup) |>
+  lapply(lapply, mutate, p = n / total) |>
+  imap(~ lapply (.x, mutate, variable = .y))
+
+prevalence_pred_comb <-
+  names(prevalence_pred_comb[[1]]) |>
+  `names<-`(names(prevalence_pred_comb[[1]])) |>
+  lapply(
+    \(x)
+    names(prevalence_pred_comb) |>
+      `names<-`(names(prevalence_pred_comb)) |>
+      lapply(
+        \(y)
+        prevalence_pred_comb[[y]][[x]]
+      )
+  ) |>
+  lapply(reduce, rbind)
+
+prevalence_pred_comb <-
+  prevalence_pred_comb |>
+  lapply(mutate_at, "step", as.character) |>
+  lapply(
+    mutate, step = ifelse(str_detect(step, "\\="), step, paste0(step, "="))
+  ) |>
+  lapply(separate, step, c("step", "value2"), sep = "\\=") |>
+  lapply(select, -value2) |>
+  lapply(mutate_at, "variable", \(x) factor(x, unique(x))) |>
+  lapply(mutate, step = factor(step, names(predictor$asd))) |>
+  lapply(arrange, variable, step, value)
+```
+
+```{r Compute prevalence for prediction by single M-CHAT, include=FALSE}
+prevalence_pred_single_m_chat <-
+  m_chat_pred |>
+  lapply(lapply, select, -obs) |>
+  lapply(lapply, gather, variable, value, -id) |>
+  lapply(lapply, mutate_at, "id", \(x) factor(x, unique(x))) |>
+  lapply(lapply, mutate_at, "value", factor) |>
+  lapply(lapply, group_by, variable, value) |>
+  lapply(lapply, summarize, n = n(), .groups = "drop") |>
+  lapply(lapply, group_by, variable) |>
+  lapply(lapply, mutate, total = sum(n)) |>
+  lapply(lapply, ungroup) |>
+  lapply(lapply, mutate, p = n / total) |>
+  imap(~ lapply (.x, mutate, variable = .y))
+
+prevalence_pred_single_m_chat <-
+  names(prevalence_pred_single_m_chat[[1]]) |>
+  `names<-`(names(prevalence_pred_single_m_chat[[1]])) |>
+  lapply(
+    \(x)
+    names(prevalence_pred_single_m_chat) |>
+      `names<-`(names(prevalence_pred_single_m_chat)) |>
+      lapply(
+        \(y)
+        prevalence_pred_single_m_chat[[y]][[x]]
+      )
+  ) |>
+  lapply(reduce, rbind) |>
+  lapply(mutate_at, "variable", \(x) factor(x, unique(x))) |>
+  lapply(mutate, step = "universal") |>
+  lapply(select, step, everything())
+```
+
+```{r Combine computed prevalence for observation and prediction, include=FALSE}
+prevalence_obs_pred <-
+  prevalence_obs_pred_step |>
+  imap(~ rbind(.x, prevalence_pred_comb[[.y]])) |>
+  imap(~ rbind(.x, prevalence_pred_single_m_chat[[.y]])) |>
+  lapply(
+    mutate_at, "step", \(x) factor(x, c("universal", names(predictor$asd)))
+  )
+```
+
+```{r Combined prevalence for obs and pred - create, include=FALSE}
+prevalence_obs_pred_whole <-
+  prevalence_obs_pred |>
+  reduce(rbind)
+
+prevalence_obs_pred_whole <-
+  prevalence_obs_pred_whole |>
+  select(-total, -p) |>
+  group_by(variable, step, value) |>
+  summarize(n = sum(n), .groups = "drop") |>
+  left_join(
+    select(prevalence_obs_pred_whole, variable, total) |>
+      unique() |>
+      group_by(variable) |>
+      summarize(total = sum(total))
+    , by = join_by(variable)
+  ) |>
+  mutate(p = n / total) |>
+  mutate(p = round(p * 100)) |>
+  mutate(p = paste0("(", p, ")")) |>
+  select(-total) |>
+  unite(n_p, n, p, sep = " ") |>
+  mutate(
+    value =
+      ifelse(value == 1, "ASD (+) n (%)", "ASD (-) n (%)") |>
+      factor(c("ASD (+) n (%)", "ASD (-) n (%)"))
+  ) |>
+  spread(value, n_p, fill = "0 (0)") |>
+  mutate_at(
+    c("variable", "step")
+    , \(x)
+      case_when(
+        x == "neonatal_risk" ~ "Universal N"
+        , x == "bsid_iii" ~ "Universal NB"
+        , x == "m_chat_r" ~ "Universal NBR"
+        , x == "m_chat_f" ~ "Universal NBF"
+        , x == "single_m_chat_r" ~ "Universal R"
+        , x == "single_m_chat_f" ~ "Universal F"
+        , x == "universal" ~ "N/A"
+        , x == "obs" ~ "Observed outcome"
+        , TRUE ~ x
+      )
+  ) |>
+  group_by(variable) |>
+  mutate(seq = seq(n())) |>
+  ungroup() |>
+  mutate(step = ifelse(seq == 1, step, str_remove_all(step, "Universal "))) |>
+  select(-seq) |>
+  mutate(variable = ifelse(duplicated(variable), "", variable))
+
+prevalence_obs_pred_whole <-
+  prevalence_obs_pred_whole |>
+  rename_if(!str_detect(names(prevalence_obs_pred_whole), "ASD"), str_to_sentence)
+```
+
+```{r Combined prevalence for obs and pred - show, echo=FALSE}
+table_n <- table_n + 1
+
+prevalence_obs_pred_whole |>
+  kable(
+    caption =
+      paste0(
+        "Table ", table_n, ". "
+        , "Prevalence for observed and predicted outcome in all sets (N = 470)."
+      )
+    , format = kable_format
+  ) |>
+  footnote(
+    paste0(
+      "ASD, autism spectrum disorder; "
+      , "BSID-III, Bayley scales of infant development version III; "
+      , "CI, confidence interval; "
+      , "F, M-CHAT-F; "
+      , "F1, 2 x precision x recall / (precision + recall); "
+      , "FNR, false negative rate or specificity; "
+      , "FPR, false positive rate or sensitivity/recall; "
+      , "M-CHAT-F, modified checklist for autism in toddlers, follow-up; "
+      , "M-CHAT-R, modified checklist for autism in toddlers, revised; "
+      , "N, neonatal risk factors; "
+      , "N/A, not applicable; "
+      , "NB, neonatal risk factors and BSID-III; "
+      , "NBR, neonatal risk factors, BSID-III, and M-CHAT-R; "
+      , "NBF, neonatal risk factors, BSID-III, and M-CHAT-F; "
+      , "NPV, negative predictive value or precision; "
+      , "PPV, positive predictive value or precision; "
+      , "R, M-CHAT-R; "
+      , "TNR, true negative rate or specificity; "
+      , "TPR, true positive rate or sensitivity/recall."
+    )
+  ) |>
+  kable_classic() |>
+  column_spec(seq(ncol(validation_auroc)), extra_css = "vertical-align:top;")
+```
+
+```{r Workflow prevalence - define, include=FALSE}
+workflow_prevalence <-
+  read_csv("inst/extdata/workflow_prevalence.csv", show_col_types = FALSE)
+```
+
+```{r Workflow prevalence - draw, include=FALSE}
+workflow_prevalence_dag <-
+  unique(workflow_prevalence$variable) |>
+  `names<-`(unique(workflow_prevalence$variable)) |>
+  lapply(
+    \(x)
+    workflow_prevalence |>
+      mutate_at(c("from", "to"), str_replace_all, " \\(", "\n(")
+  ) |>
+  imap(~ filter(.x, variable == .y)) |>
+  lapply(graph_from_data_frame, directed = TRUE) |>
+  lapply(
+    \(x)
+    ggnetwork(
+      x
+      , layout = layout_as_tree(x, circular = FALSE)
+      , arrow.gap = 0.01
+    )
+  ) |>
+  lapply(
+    \(x)
+    ggplot(x, aes(x, y, xend = xend, yend = yend)) +
+      geom_blank(
+        data =
+          data.frame(x = c(0 - 0.3, 1 + 0.3)) |>
+          mutate(y = x, xend = x, yend = x)
+      ) +
+      geom_edges(arrow = arrow(length = unit(0.5, "line"), type = "closed")) +
+      geom_nodelabel(aes(label = name), size = 3, vjust = 1, hjust = 0.5) +
+      theme_void()
+  )
+
+workflow_prevalence_dag <-
+  ggarrange(
+    ggarrange(
+      workflow_prevalence_dag$`Universal N`
+      , workflow_prevalence_dag$`Universal NB`
+      , workflow_prevalence_dag$`Universal NBR`
+      , workflow_prevalence_dag$`Universal NBF`
+      , nrow = 1, ncol = 4, labels = LETTERS[1:4]
+    )
+    , ggarrange(
+      workflow_prevalence_dag$`N0-NB0-NBR0-NBF`
+      , ggarrange(
+          workflow_prevalence_dag$`N0-NB0-NBR`
+          , ggarrange(
+              workflow_prevalence_dag$`Universal R`
+              , workflow_prevalence_dag$`Universal F`
+              , nrow = 1, ncol = 2, labels = LETTERS[7:8]
+            )
+          , nrow = 2, ncol = 1, heights = c(5, 2.5)
+          , labels = c(LETTERS[6], "")
+        )
+      , nrow = 1, ncol = 2, labels = c(LETTERS[5], "")
+    )
+    , nrow = 2, ncol = 1, heights = c(2.5, 7.5)
+  )
+```
+
+```{r Workflow prevalence - show, echo=FALSE, fig.height=10, fig.width=10}
+workflow_prevalence_dag
+```
+
+```{r Workflow prevalence - caption, echo=FALSE}
+figure_n <- figure_n + 1
+cat(
+  paste0(
+    "Figure ", figure_n,". "
+    , "Workflow with prevalence: (A) Universal N; (B) Universal NB; (C) "
+    , "Universal NBR; (D) Universal NBF; (E) N0-NB0-NBR0-NBF; (F) N0-NB0-NBR; "
+    , "(G) Universal R; and (H) Universal F. BSID-III, Bayley scales of infant "
+    , "development version III; F, M-CHAT-F; M-CHAT-F, modified checklist for "
+    , "autism in toddlers, follow-up; M-CHAT-R, modified checklist for autism "
+    , "in toddlers, revised; N, neonatal risk factors; NB, neonatal risk "
+    , "factors and BSID-III; NBR, neonatal risk factors, BSID-III, and "
+    , "M-CHAT-R; NBF, neonatal risk factors, BSID-III, and M-CHAT-F; R, "
+    , "M-CHAT-R."
+  )
+)
+```
+
 
 
