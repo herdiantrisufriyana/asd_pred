@@ -77,9 +77,9 @@ thresholding <-
       reduce(rbind) |>
       group_by(ref_type, ref_value, metric) |>
       summarize(
-        avg = mean(value)
-        , lb = mean(value) - qnorm(0.975) * sd(value) / sqrt(n())
-        , ub = mean(value) + qnorm(0.975) * sd(value) / sqrt(n())
+        avg = mean(value, na.rm = TRUE)
+        , lb = mean(value, na.rm = TRUE) - qnorm(0.975) * sd(value, na.rm = TRUE) / sqrt(n())
+        , ub = mean(value, na.rm = TRUE) + qnorm(0.975) * sd(value, na.rm = TRUE) / sqrt(n())
         , .groups = "drop"
       ) |>
       mutate(
