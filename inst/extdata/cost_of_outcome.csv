@@ -2,16 +2,28 @@ step,variable,question,answer
 neonatal_risk,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
 neonatal_risk,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
 neonatal_risk,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
-neonatal_risk,CTN,"From 0 to 100, how much is the cost of applying the risk model?",5
+neonatal_risk,CTN,"From 0 to 100, how much is the cost of applying the risk model?",2
 bsid_iii,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
 bsid_iii,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
 bsid_iii,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
-bsid_iii,CTN,"From 0 to 100, how much is the cost of applying the risk model?",8
+bsid_iii,CTN,"From 0 to 100, how much is the cost of applying the risk model?",5
 m_chat_r,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
 m_chat_r,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
 m_chat_r,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
-m_chat_r,CTN,"From 0 to 100, how much is the cost of applying the risk model?",12
+m_chat_r,CTN,"From 0 to 100, how much is the cost of applying the risk model?",9
 m_chat_f,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
 m_chat_f,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
 m_chat_f,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
-m_chat_f,CTN,"From 0 to 100, how much is the cost of applying the risk model?",15
+m_chat_f,CTN,"From 0 to 100, how much is the cost of applying the risk model?",12
+m_chat_r2f,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
+m_chat_r2f,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
+m_chat_r2f,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
+m_chat_r2f,CTN,"From 0 to 100, how much is the cost of applying the risk model?",11
+m_chat_rf,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
+m_chat_rf,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
+m_chat_rf,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
+m_chat_rf,CTN,"From 0 to 100, how much is the cost of applying the risk model?",16
+only_bsid_iii,CTP,"From 0 to 100, how much is the cost of detected/treated disease, e.g, severe risk of death or severe morbidity despite detection, plus the cost of intervening?",30
+only_bsid_iii,CFP,"From 0 to 100, how much is the cost of an unneeded intervention, e.g, invasiveness of testing, complication risk of treatment?",20
+only_bsid_iii,CFN,"From 0 to 100, how much is the cost of an undetected disease, e.g, severe risk of death or severe morbidity?",80
+only_bsid_iii,CTN,"From 0 to 100, how much is the cost of applying the risk model?",3
