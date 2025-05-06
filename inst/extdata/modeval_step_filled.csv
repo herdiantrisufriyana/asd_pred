@@ -30,3 +30,11 @@ m24_fm_ss,bsid_iii
 m24_gm_ss,bsid_iii
 m_chat_r,m_chat_r
 m_chat_f,m_chat_f
+m_chat_r2f,m_chat_r2f
+m_chat_rf_r,m_chat_rf
+m_chat_rf_f,m_chat_rf
+m24_cong_ss,only_bsid_iii
+m24_rc_ss,only_bsid_iii
+m24_ec_ss,only_bsid_iii
+m24_fm_ss,only_bsid_iii
+m24_gm_ss,only_bsid_iii
