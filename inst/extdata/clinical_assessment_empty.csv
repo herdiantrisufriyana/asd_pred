@@ -1,0 +1,97 @@
+step,algorithm,feature,aligned
+neonatal_risk,rr,Supplemental oxygen duration,NA
+neonatal_risk,rr,Small for gestational age,NA
+neonatal_risk,rr,Male,NA
+neonatal_risk,rr,Hospital stay,NA
+neonatal_risk,knn,Supplemental oxygen duration,NA
+neonatal_risk,knn,Hospital stay,NA
+neonatal_risk,knn,Male,NA
+neonatal_risk,knn,Small for gestational age,NA
+bsid_iii,dt,24 m/o scaled scores of expressive language,NA
+bsid_iii,dt,24 m/o scaled scores of cognitive,NA
+bsid_iii,dt,Supplemental oxygen duration,NA
+bsid_iii,dt,24 m/o scaled scores of gross motor,NA
+bsid_iii,rf,24 m/o scaled scores of expressive language,NA
+bsid_iii,rf,24 m/o scaled scores of cognitive,NA
+bsid_iii,rf,24 m/o scaled scores of receptive language,NA
+bsid_iii,rf,Male,NA
+bsid_iii,rf,Supplemental oxygen duration,NA
+bsid_iii,rf,24 m/o scaled scores of fine motor,NA
+bsid_iii,rf,Hospital stay,NA
+bsid_iii,rf,24 m/o scaled scores of gross motor,NA
+bsid_iii,rf,Small for gestational age,NA
+m_chat_r,rf,24 m/o scaled scores of expressive language,NA
+m_chat_r,rf,M chat R score,NA
+m_chat_r,rf,24 m/o scaled scores of cognitive,NA
+m_chat_r,rf,24 m/o scaled scores of receptive language,NA
+m_chat_r,rf,Supplemental oxygen duration,NA
+m_chat_r,rf,Male,NA
+m_chat_r,rf,24 m/o scaled scores of fine motor,NA
+m_chat_r,rf,Hospital stay,NA
+m_chat_r,rf,24 m/o scaled scores of gross motor,NA
+m_chat_r,rf,Small for gestational age,NA
+m_chat_r,gbm,Supplemental oxygen duration,NA
+m_chat_r,gbm,24 m/o scaled scores of expressive language,NA
+m_chat_r,gbm,M chat R score,NA
+m_chat_r,gbm,24 m/o scaled scores of receptive language,NA
+m_chat_r,gbm,24 m/o scaled scores of cognitive,NA
+m_chat_r,gbm,Hospital stay,NA
+m_chat_r,gbm,Male,NA
+m_chat_r,gbm,Small for gestational age,NA
+m_chat_r,gbm,24 m/o scaled scores of fine motor,NA
+m_chat_r,gbm,24 m/o scaled scores of gross motor,NA
+m_chat_f,rf,24 m/o scaled scores of expressive language,NA
+m_chat_f,rf,M chat F score,NA
+m_chat_f,rf,24 m/o scaled scores of cognitive,NA
+m_chat_f,rf,24 m/o scaled scores of receptive language,NA
+m_chat_f,rf,Supplemental oxygen duration,NA
+m_chat_f,rf,Male,NA
+m_chat_f,rf,24 m/o scaled scores of fine motor,NA
+m_chat_f,rf,Hospital stay,NA
+m_chat_f,rf,24 m/o scaled scores of gross motor,NA
+m_chat_f,rf,Small for gestational age,NA
+m_chat_r2f,rf,24 m/o scaled scores of expressive language,NA
+m_chat_r2f,rf,24 m/o scaled scores of cognitive,NA
+m_chat_r2f,rf,24 m/o scaled scores of receptive language,NA
+m_chat_r2f,rf,Supplemental oxygen duration,NA
+m_chat_r2f,rf,Male,NA
+m_chat_r2f,rf,M-CHAT-R score ≥3 and M-CHAT-F score ≥2,NA
+m_chat_r2f,rf,24 m/o scaled scores of fine motor,NA
+m_chat_r2f,rf,Hospital stay,NA
+m_chat_r2f,rf,24 m/o scaled scores of gross motor,NA
+m_chat_r2f,rf,Small for gestational age,NA
+m_chat_r2f,dnn,M-CHAT-R score ≥3 and M-CHAT-F score ≥2,NA
+m_chat_r2f,dnn,24 m/o scaled scores of expressive language,NA
+m_chat_r2f,dnn,Small for gestational age,NA
+m_chat_r2f,dnn,Hospital stay,NA
+m_chat_r2f,dnn,24 m/o scaled scores of receptive language,NA
+m_chat_r2f,dnn,Male,NA
+m_chat_r2f,dnn,24 m/o scaled scores of gross motor,NA
+m_chat_r2f,dnn,Supplemental oxygen duration,NA
+m_chat_r2f,dnn,24 m/o scaled scores of fine motor,NA
+m_chat_r2f,dnn,24 m/o scaled scores of cognitive,NA
+m_chat_rf,rf,24 m/o scaled scores of expressive language,NA
+m_chat_rf,rf,M-CHAT-R score,NA
+m_chat_rf,rf,24 m/o scaled scores of cognitive,NA
+m_chat_rf,rf,24 m/o scaled scores of receptive language,NA
+m_chat_rf,rf,Supplemental oxygen duration,NA
+m_chat_rf,rf,Male,NA
+m_chat_rf,rf,M-CHAT-F score,NA
+m_chat_rf,rf,24 m/o scaled scores of fine motor,NA
+m_chat_rf,rf,Hospital stay,NA
+m_chat_rf,rf,24 m/o scaled scores of gross motor,NA
+m_chat_rf,rf,Small for gestational age,NA
+only_bsid_iii,dt,24 m/o scaled scores of expressive language,NA
+only_bsid_iii,dt,24 m/o scaled scores of cognitive,NA
+only_bsid_iii,dt,24 m/o scaled scores of fine motor,NA
+only_bsid_iii,dt,24 m/o scaled scores of gross motor,NA
+only_bsid_iii,rf,24 m/o scaled scores of expressive language,NA
+only_bsid_iii,rf,24 m/o scaled scores of cognitive,NA
+only_bsid_iii,rf,24 m/o scaled scores of receptive language,NA
+only_bsid_iii,rf,24 m/o scaled scores of fine motor,NA
+only_bsid_iii,rf,24 m/o scaled scores of gross motor,NA
+only_bsid_iii,gbm,24 m/o scaled scores of expressive language,NA
+only_bsid_iii,gbm,24 m/o scaled scores of receptive language,NA
+only_bsid_iii,gbm,24 m/o scaled scores of cognitive,NA
+only_bsid_iii,gbm,24 m/o scaled scores of fine motor,NA
+only_bsid_iii,gbm,24 m/o scaled scores of gross motor,NA

@@ -1,0 +1,97 @@
+step,algorithm,feature,aligned
+neonatal_risk,rr,Supplemental oxygen duration,yes
+neonatal_risk,rr,Small for gestational age,yes
+neonatal_risk,rr,Male,yes
+neonatal_risk,rr,Hospital stay,no
+neonatal_risk,knn,Supplemental oxygen duration,yes
+neonatal_risk,knn,Hospital stay,no
+neonatal_risk,knn,Male,yes
+neonatal_risk,knn,Small for gestational age,no
+bsid_iii,dt,24 m/o scaled scores of expressive language,no
+bsid_iii,dt,24 m/o scaled scores of cognitive,no
+bsid_iii,dt,Supplemental oxygen duration,unclear
+bsid_iii,dt,24 m/o scaled scores of gross motor,unclear
+bsid_iii,rf,24 m/o scaled scores of expressive language,no
+bsid_iii,rf,24 m/o scaled scores of cognitive,no
+bsid_iii,rf,24 m/o scaled scores of receptive language,no
+bsid_iii,rf,Male,no
+bsid_iii,rf,Supplemental oxygen duration,yes
+bsid_iii,rf,24 m/o scaled scores of fine motor,no
+bsid_iii,rf,Hospital stay,yes
+bsid_iii,rf,24 m/o scaled scores of gross motor,unclear
+bsid_iii,rf,Small for gestational age,no
+m_chat_r,rf,24 m/o scaled scores of expressive language,no
+m_chat_r,rf,M chat R score,no
+m_chat_r,rf,24 m/o scaled scores of cognitive,no
+m_chat_r,rf,24 m/o scaled scores of receptive language,no
+m_chat_r,rf,Supplemental oxygen duration,yes
+m_chat_r,rf,Male,no
+m_chat_r,rf,24 m/o scaled scores of fine motor,no
+m_chat_r,rf,Hospital stay,yes
+m_chat_r,rf,24 m/o scaled scores of gross motor,unclear
+m_chat_r,rf,Small for gestational age,no
+m_chat_r,gbm,Supplemental oxygen duration,no
+m_chat_r,gbm,24 m/o scaled scores of expressive language,yes
+m_chat_r,gbm,M chat R score,yes
+m_chat_r,gbm,24 m/o scaled scores of receptive language,yes
+m_chat_r,gbm,24 m/o scaled scores of cognitive,yes
+m_chat_r,gbm,Hospital stay,unclear
+m_chat_r,gbm,Male,yes
+m_chat_r,gbm,Small for gestational age,yes
+m_chat_r,gbm,24 m/o scaled scores of fine motor,yes
+m_chat_r,gbm,24 m/o scaled scores of gross motor,unclear
+m_chat_f,rf,24 m/o scaled scores of expressive language,no
+m_chat_f,rf,M chat F score,no
+m_chat_f,rf,24 m/o scaled scores of cognitive,no
+m_chat_f,rf,24 m/o scaled scores of receptive language,no
+m_chat_f,rf,Supplemental oxygen duration,yes
+m_chat_f,rf,Male,no
+m_chat_f,rf,24 m/o scaled scores of fine motor,no
+m_chat_f,rf,Hospital stay,yes
+m_chat_f,rf,24 m/o scaled scores of gross motor,unclear
+m_chat_f,rf,Small for gestational age,no
+m_chat_r2f,rf,24 m/o scaled scores of expressive language,no
+m_chat_r2f,rf,24 m/o scaled scores of cognitive,no
+m_chat_r2f,rf,24 m/o scaled scores of receptive language,no
+m_chat_r2f,rf,Supplemental oxygen duration,yes
+m_chat_r2f,rf,Male,no
+m_chat_r2f,rf,M-CHAT-R score ≥3 and M-CHAT-F score ≥2,no
+m_chat_r2f,rf,24 m/o scaled scores of fine motor,no
+m_chat_r2f,rf,Hospital stay,yes
+m_chat_r2f,rf,24 m/o scaled scores of gross motor,unclear
+m_chat_r2f,rf,Small for gestational age,no
+m_chat_r2f,dnn,M-CHAT-R score ≥3 and M-CHAT-F score ≥2,yes
+m_chat_r2f,dnn,24 m/o scaled scores of expressive language,yes
+m_chat_r2f,dnn,Small for gestational age,yes
+m_chat_r2f,dnn,Hospital stay,yes
+m_chat_r2f,dnn,24 m/o scaled scores of receptive language,yes
+m_chat_r2f,dnn,Male,no
+m_chat_r2f,dnn,24 m/o scaled scores of gross motor,unclear
+m_chat_r2f,dnn,Supplemental oxygen duration,yes
+m_chat_r2f,dnn,24 m/o scaled scores of fine motor,no
+m_chat_r2f,dnn,24 m/o scaled scores of cognitive,unclear
+m_chat_rf,rf,24 m/o scaled scores of expressive language,no
+m_chat_rf,rf,M-CHAT-R score,no
+m_chat_rf,rf,24 m/o scaled scores of cognitive,no
+m_chat_rf,rf,24 m/o scaled scores of receptive language,no
+m_chat_rf,rf,Supplemental oxygen duration,yes
+m_chat_rf,rf,Male,no
+m_chat_rf,rf,M-CHAT-F score,no
+m_chat_rf,rf,24 m/o scaled scores of fine motor,no
+m_chat_rf,rf,Hospital stay,yes
+m_chat_rf,rf,24 m/o scaled scores of gross motor,unclear
+m_chat_rf,rf,Small for gestational age,no
+only_bsid_iii,dt,24 m/o scaled scores of expressive language,no
+only_bsid_iii,dt,24 m/o scaled scores of cognitive,no
+only_bsid_iii,dt,24 m/o scaled scores of fine motor,no
+only_bsid_iii,dt,24 m/o scaled scores of gross motor,unclear
+only_bsid_iii,rf,24 m/o scaled scores of expressive language,no
+only_bsid_iii,rf,24 m/o scaled scores of cognitive,no
+only_bsid_iii,rf,24 m/o scaled scores of receptive language,no
+only_bsid_iii,rf,24 m/o scaled scores of fine motor,no
+only_bsid_iii,rf,24 m/o scaled scores of gross motor,no
+only_bsid_iii,gbm,24 m/o scaled scores of expressive language,yes
+only_bsid_iii,gbm,24 m/o scaled scores of receptive language,yes
+only_bsid_iii,gbm,24 m/o scaled scores of cognitive,yes
+only_bsid_iii,gbm,24 m/o scaled scores of fine motor,yes
+only_bsid_iii,gbm,24 m/o scaled scores of gross motor,yes
