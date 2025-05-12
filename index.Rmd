@@ -5135,7 +5135,25 @@ prevalence_obs_pred <-
 ```{r Combined prevalence for obs and pred - create, include=FALSE}
 prevalence_obs_pred_whole <-
   prevalence_obs_pred |>
-  reduce(rbind)
+  reduce(rbind)|>
+  mutate(
+    step =
+      factor(
+        step
+        , c(setdiff(levels(step), "only_bsid_iii")[
+              seq(which(setdiff(levels(step), "only_bsid_iii") == "bsid_iii"))
+            ]
+            , "only_bsid_iii"
+            , setdiff(levels(step), "only_bsid_iii")[
+                seq(
+                  which(setdiff(levels(step), "only_bsid_iii") == "bsid_iii")
+                  + 1
+                  , length(setdiff(levels(step), "only_bsid_iii"))
+                )
+              ]
+          )
+      )
+  )
 
 prevalence_obs_pred_whole <-
   prevalence_obs_pred_whole |>
@@ -5276,16 +5294,15 @@ workflow_prevalence_dag <-
   ggarrange(
     ggarrange(
       workflow_prevalence_dag$`Universal N`
-      , workflow_prevalence_dag$`Universal NBR`
-      , workflow_prevalence_dag$`Universal R`
-      , nrow = 3, ncol = 1, labels = LETTERS[1:3]
+      , workflow_prevalence_dag$`Universal B`
+      , nrow = 2, ncol = 1, labels = LETTERS[1:2]
     )
-    , workflow_prevalence_dag$`N0-NBR`
-    , nrow = 1, ncol = 2, widths = c(3, 4), labels = c("", LETTERS[4])
+    , workflow_prevalence_dag$`N0-B`
+    , nrow = 1, ncol = 2, widths = c(3, 3), labels = c("", LETTERS[3])
   )
 ```
 
-```{r Workflow prevalence - show, echo=FALSE, fig.height=6, fig.width=7}
+```{r Workflow prevalence - show, echo=FALSE, fig.height=4, fig.width=6}
 workflow_prevalence_dag
 ```
 
@@ -5294,15 +5311,277 @@ figure_n <- figure_n + 1
 cat(
   paste0(
     "Figure ", figure_n,". "
-    , "Workflow with prevalence: (A) Universal N; (B) Universal NBR; (C) "
-    , "Universal R; and (D) N0-NBR. BSID-III, Bayley scales of infant "
-    , "development version III; F, M-CHAT-R, modified checklist for autism in "
-    , "toddlers, revised; N, neonatal risk factors; NBR, neonatal risk "
-    , "factors, BSID-III, and M-CHAT-R; R, M-CHAT-R."
+    , "Workflow with prevalence: (A) Universal N; (B) Universal B; (C) N0-B. "
+    , "BSID-III, Bayley scales of infant development version III; N, neonatal "
+    , "risk factors; B, only BSID-III."
   )
 )
 ```
 
+```{r}
+c(predictor$asd$neonatal_risk
+  , predictor$asd$only_bsid_iii
+  ) |>
+  paste0(collapse = ", ") |>
+  cat()
+```
 
+```{r}
+predmod_data$asd$neonatal_risk |>
+  reduce(rbind) |>
+  select_at(predictor$asd$neonatal_risk) |>
+  lapply(unique) |>
+  lapply(sort) |>
+  c(predmod_data$asd$only_bsid_iii |>
+      reduce(rbind) |>
+      select_at(predictor$asd$only_bsid_iii) |>
+      lapply(unique) |>
+      lapply(sort)
+  )
+```
 
+```{r}
+predmod_data$asd$neonatal_risk |>
+  reduce(rbind) |>
+  select_at(predictor$asd$neonatal_risk) |>
+  summarize_all(mean) |>
+  cbind(
+    predmod_data$asd$only_bsid_iii |>
+      reduce(rbind) |>
+      select_at(predictor$asd$only_bsid_iii) |>
+      summarize_all(mean)
+  )
+```
 
+```{r}
+th$neonatal_risk
+th$only_bsid_iii
+```
+
+# Manuscript materials
+
+```{r Effect size plot in paper, include=FALSE}
+paper_es_plot <-
+  data.frame(variable_term = levels(es_plots[[1]]$data$variable_term)) |>
+  separate(variable_term, c("variable", "term"), sep = " = ") |>
+  pull(variable) |>
+  str_replace_all("fine motor", "fine motor*") |>
+  str_replace_all("receptive language", "receptive language*")
+
+paper_es_plot <-
+  es_plots[[1]]$data |>
+  left_join(
+    data.frame(
+      variable_term = 
+        factor(
+          levels(es_plots[[1]]$data$variable_term)
+          , levels(es_plots[[1]]$data$variable_term)
+        )
+      , variable = factor(paper_es_plot, paper_es_plot)
+    )
+    , by = join_by(variable_term)
+  ) |>
+  mutate(variable_term = variable) |>
+  select(-variable) |>
+  ggplot(aes(variable_term, OR, color = adjustment)) +
+  geom_hline(yintercept = 1, lty = 2) +
+  geom_point(
+    aes(size = adjustment)
+    , show.legend = FALSE, na.rm = TRUE
+  ) +
+  geom_errorbar(
+    aes(ymin = LB, ymax = UB)
+    , width = 0.75, na.rm = TRUE
+  ) +
+  coord_flip() +
+  xlab("Predictor") +
+  scale_y_continuous(
+    "OR (95% CI)", limits = c(2^-1.1, 4)
+    , breaks = c(2^-1, 2^0, 2^1, 2^2)
+    , labels = c("0.5", "1", "2", "4+")
+    , trans = "log2"
+  ) +
+  scale_size_manual(values = c(1, 0.5)) +
+  scale_color_discrete("Adjusted")+
+  theme_classic() +
+  theme(
+    panel.grid.major = element_line()
+    , panel.grid.minor = element_line()
+    , axis.title.x = element_text(size = 6)
+    , axis.text.x = element_text(size = 6)
+    , axis.title.y = element_text(size = 6)
+    , axis.text.y = element_text(size = 6)
+    , legend.title = element_text(size = 6)
+    , legend.text = element_text(size = 6)
+  )
+```
+
+```{r ROC curves in paper, include=FALSE}
+paper_roc <-
+  list(
+    plot =
+      list(
+        data =
+          list(
+            `Neonatal risks` =
+              eval$discrimination$neonatal_risk[[
+                selected_model$best_f1$neonatal_risk
+              ]]
+            , `BSID-III` =
+              eval$discrimination$only_bsid_iii[[
+                selected_model$best_f1$only_bsid_iii
+              ]]
+            , `NBR` =
+              eval$discrimination$m_chat_r[[
+                selected_model$best_f1$m_chat_r
+              ]]
+          ) |>
+          imap(
+            ~ mutate(.x$validation$plot$data, model = .y)
+          ) |>
+          reduce(rbind) |>
+          mutate_at(
+            "model"
+            , \(x)
+              factor(x, c(unique(x), "Neonatal risk 0 –\nBSID-III", "MCHAT-R"))
+          )
+      )
+  ) |>
+  arrange_disc_plot(multiple = TRUE)
+
+paper_roc <-
+  paper_roc$data |>
+  ggplot(aes(tnr, tpr, color = model)) +
+  geom_abline(slope = 1, intercept = 1, lty = 2) +
+  geom_path() +
+  geom_point(
+    data =
+      list(
+        `Neonatal risks` =
+          eval$discrimination$neonatal_risk[[
+            selected_model$best_f1$neonatal_risk
+          ]]
+        , `BSID-III` =
+          eval$discrimination$only_bsid_iii[[
+            selected_model$best_f1$only_bsid_iii
+          ]]
+        , `NBR` =
+          eval$discrimination$m_chat_r[[
+            selected_model$best_f1$m_chat_r
+          ]]
+      ) |>
+      imap(
+        ~ mutate(.x$validation$plot$data, model = .y)
+      ) |>
+      reduce(rbind) |>
+      rename(th2 = th) |>
+      inner_join(
+        data.frame(
+            th2 =
+              c(`Neonatal risks` = th$neonatal_risk
+                , `BSID-III` = th$only_bsid_iii
+                , `NBR` = th$m_chat_r
+              )
+          ) |>
+          rownames_to_column(var = "model")
+        , by = join_by(th2, model)
+      ) |>
+      rbind(
+        list(
+            `MCHAT-R` =
+              eval2$df$single_m_chat_r$validation
+          ) |>
+          imap(
+            ~ mutate(.x, model = .y)
+          ) |>
+          reduce(rbind) |>
+          mutate_at("model", \(x) factor(x, unique(x))) |>
+          group_by(obs, pred, model) |>
+          summarize(n = n(), .groups = "drop") |>
+          mutate_at(c("obs", "pred"), as.character) |>
+          mutate_at(c("obs", "pred"), as.numeric) |>
+          mutate(
+            cm =
+              case_when(
+                obs == 1 & pred == 1 ~ "tp"
+                , obs == 1 & pred == 0 ~ "fn"
+                , obs == 0 & pred == 1 ~ "fp"
+                , obs == 0 & pred == 0 ~ "tn"
+              )
+          ) |>
+          select(model, cm, n) |>
+          spread(cm, n) |>
+          mutate(th2 = NA, tpr = tp / (tp + fn), tnr = tn / (tn + fp)) |>
+          select(th2, tpr, tnr, model)
+      ) |>
+      mutate_at("model", \(x) factor(x, unique(x)))
+    , size = 1
+  ) +
+  coord_equal() +
+  scale_x_reverse("Specificity", breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous("Sensitivity", breaks = seq(0, 1, 0.1)) +
+  scale_color_discrete(guide = guide_legend(nrow = 2)) +
+  theme_classic() +
+  theme(
+    axis.title.x = element_text(size = 6)
+    , axis.text.x = element_text(size = 6, angle = 90, vjust = 0.5, hjust = 1)
+    , axis.title.y = element_text(size = 6)
+    , axis.text.y = element_text(size = 6)
+    , legend.title = element_blank()
+    , legend.text = element_text(size = 6)
+    , legend.position = "bottom"
+  )
+```
+
+```{r SHAP beeswarm plot in paper, include=FALSE}
+paper_shap_beeswarm_plot <-
+  shap_beeswarm_plots$m_chat_r[[selected_model$best_f1$m_chat_r]]$data |>
+  pull(feature) |>
+  levels() |>
+  str_wrap(30)
+
+paper_shap_beeswarm_plot <-
+  shap_beeswarm_plots$m_chat_r[[selected_model$best_f1$m_chat_r]]$data |>
+  left_join(
+    data.frame(
+        feature =
+          shap_beeswarm_plots$m_chat_r[[
+            selected_model$best_f1$m_chat_r
+          ]]$data |>
+          pull(feature) |>
+          levels()
+        , label = paper_shap_beeswarm_plot
+      ) |>
+      mutate_all(\(x) factor(x, x))
+    , by = join_by(feature)
+  ) |>
+  mutate(feature = label) |>
+  select(-label) |>
+  shap_beeswarm_plotter(
+    transparency = 1, text_size = 6, feature_rank_num = FALSE
+  )
+```
+
+```{r Figure 2 in paper - create, include=FALSE}
+paper_figure2 <-
+  ggarrange(
+    paper_es_plot
+    , ggarrange(
+        paper_roc
+        , paper_shap_beeswarm_plot
+        , nrow = 1, ncol = 2, widths = c(1.5, 3.6181)
+        , labels = LETTERS[2:3], font.label = list(size = 9)
+      )
+    , nrow = 2, ncol = 1, heights = c(2, 2.5)
+    , labels = c(LETTERS[1], ""), font.label = list(size = 9)
+  )
+```
+
+```{r Figure 2 in paper - show, echo=FALSE, fig.height=4.5, fig.width=5.1181}
+paper_figure2
+```
+
+```{r Figure 2 in paper - save, eval=FALSE, include=FALSE}
+paper_figure2
+ggsave("doc/figure2.eps", height = 4.5, width = 5.1181)
+```
