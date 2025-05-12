@@ -1,6 +1,6 @@
 ---
 title: "Early prediction of autism spectrum disorder (ASD) among preterm infants"
-author: "Herdiantri Sufriyana, Li-Wen Chen, Chien-Jung Ho, Ting-Chun Yeh, Chao-Ching
+author: "Li-Wen Chen, Herdiantri Sufriyana, Chien-Jung Ho, Ting-Chun Yeh, Chao-Ching
   Huang, Emily Chia-Yu Su"
 date: "2025-03-13"
 output: html_document
