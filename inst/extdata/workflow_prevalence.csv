@@ -3,10 +3,12 @@ from,to,variable
 "Universal N (100%)","Universal N = 0 (64%)",Universal N
 "Universal NBR (100%)","Universal NBR = 1 (30%)",Universal NBR
 "Universal NBR (100%)","Universal NBR = 0 (70%)",Universal NBR
-"Universal N (100%)","Universal N = 1 (36%)",N0-NBR
-"Universal N (100%)","Universal N = 0 (64%)",N0-NBR
-"Universal N = 0 (64%)","NBR (64%)",N0-NBR
-"NBR (64%)","NBR = 1 (8%)",N0-NBR
-"NBR (64%)","NBR = 0 (56%)",N0-NBR
+"Universal B (100%)","Universal B = 1 (36%)",Universal B
+"Universal B (100%)","Universal B = 0 (64%)",Universal B
+"Universal N (100%)","Universal N = 1 (36%)",N0-B
+"Universal N (100%)","Universal N = 0 (64%)",N0-B
+"Universal N = 0 (64%)","B (64%)",N0-B
+"B (64%)","B = 1 (19%)",N0-B
+"B (64%)","B = 0 (45%)",N0-B
 "Universal R (100%)","Universal R = 1 (7%)",Universal R
 "Universal R (100%)","Universal R = 0 (93%)",Universal R
